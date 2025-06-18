@@ -1,9 +1,11 @@
 import csv
 import re
 from datetime import datetime
+import os
 
 class Theatre:
-    def __init__(self):
+    def __init__(self, login_instance):
+        self.login = login_instance
         self.movie_list = {
             1: "Baahubali 2",
             2: "Pushpa",
@@ -14,108 +16,149 @@ class Theatre:
         }
         self.movie_timings = ["9:30", "12:30", "4:00", "7:30", "11:30"]
         self.booked_seats = {}
+        self.hall_data = {}
 
     def seats(self, n):
         self.n = n
         self.col = [i for i in range(n)]
-        self.alpha_dict = {}
-        alpha_chr = 65
-
-        self.ticket_count = n*n
-        self.available_rows = [chr(alpha_chr + i) for i in range(n)]
+        self.available_rows = [chr(65 + i) for i in range(n)]
         self.available_cols = [str(i) for i in range(n)]
 
-        for _ in range(n):
-            self.alpha_dict[chr(alpha_chr)] = [0 for _ in range(n)]
-            alpha_chr += 1
-    
+        for movie_id in self.movie_list:
+            alpha_dict = {}
+            alpha_chr = 65
+            for _ in range(n):
+                alpha_dict[chr(alpha_chr)] = [0 for _ in range(n)]
+                alpha_chr += 1
+            self.hall_data[movie_id] = {
+                'alpha_dict': alpha_dict,
+                'ticket_count': n * n
+            }
+
     def display_seats(self):
+        print("\nAvailable Movies:")
+        for key, val in self.movie_list.items():
+            print(f"{key}. {val}")
+
+        try:
+            movie_id = int(input("Enter the serial number of the movie to view its seating: "))
+            if movie_id not in self.movie_list:
+                print("Invalid movie number.")
+                return
+
+            print(f"\n--- Seating for '{self.movie_list[movie_id]}' ---")
+            hall = self.hall_data[movie_id]
+            print("   ", self.col)
+            for key, val in hall['alpha_dict'].items():
+                print(key, ":", val)
+        except ValueError:
+            print("Please enter a valid number.")
+
+    def _display_movie_seats(self, movie_id):
+        print(f"\n--- Seating for '{self.movie_list[movie_id]}' ---")
+        hall = self.hall_data[movie_id]
         print("   ", self.col)
-        for key, val in self.alpha_dict.items():
+        for key, val in hall['alpha_dict'].items():
             print(key, ":", val)
-    
+
+    def update_booking_csv(self, name, uid, show_time, seats, movie_id, status):
+        row = [datetime.today().date(), name, uid, show_time, len(seats), seats, self.movie_list[movie_id], status]
+
+        if not os.path.exists(self.login.file2):
+            with open(self.login.file2, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(['Date', 'UserName', 'UID', 'Show_Timing', 'No_of_Seats', 'Seat_Numbers', 'Movie_Name', 'Ticket_Status'])
+
+        with open(self.login.file2, 'a', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(row)
+
     def book_ticket(self):
-        print("""
-            1. Baahubali 2
-            2. Pushpa
-            3. Kal Ho Na Ho
-            4. War 2
-            5. Inception
-            6. 50 First Dates
-        """)
+        print("\nAvailable Movies:")
+        for key, val in self.movie_list.items():
+            print(f"{key}. {val}")
+
         m = int(input("Enter the serial number of the movie: "))
 
         if m not in self.movie_list:
-            return "PLease enter only the serial numbers of the movie given in the list"
-        
-        else:
-            
-            n = int(input("Enter the number of seats you want to book: "))
-
-            if n > self.ticket_count:
-                print(f"There are only {self.ticket_count} seats left for this show.")
-                return
-
-            booked = 0
-            while booked < n:
-                self.display_seats()
-                print("""
-                Seats marked as 'X' are reserved and cannot be booked.
-                Seats marked as '0' are available.
-                """)
-                print("Available rows:", self.available_rows)
-                print("Available columns:", self.available_cols)
-
-                name = input("Enter your name: ")
-                row = input("Choose your row from the given list: ").upper()
-                colm = input("Choose your column from the given list: ")
-
-                seat_num = row + colm
-
-                if row not in self.available_rows or colm not in self.available_cols:
-                    print("\n\t---- Please enter only the elements given in the list ----")
-                    continue
-
-                if seat_num in self.booked_seats:
-                    print("This seat is already booked, please choose another seat.")
-                    continue
-
-                self.booked_seats[seat_num] = [name, m, seat_num]
-                self.alpha_dict[row][int(colm)] = 'X'
-                self.ticket_count -= 1
-                booked += 1
-                print(f"Seat {seat_num} successfully booked for {name}.\n")
-
-    
-    def display_ticket_details(self):
-        ticket_id = input("Enter your ticket id: (Ex: A1, B2, C6)")
-        if ticket_id in self.booked_seats:
-            return self.booked_seats[ticket_id]
-        else:
-            return "Enter the ticket_id in correct format (Ex: A1, B2, C6)"
-    
-    def cancel_ticket(self):
-        ticket_id = input("Enter your ticket id that you want to canecl: (Ex: A1, B2, C6)")
-        if ticket_id in self.booked_seats:
-            self.booked_seats.pop(ticket_id)
-            self.alpha_dict[ticket_id[0]][int(ticket_id[1])] = 0
-            self.ticket_count += 1
-            print(f"{ticket_id} is successfully cancelled")
+            print("Please enter a valid movie serial number.")
             return
-        else:
-            return "Your entered ticket number is not booked yet"
-    
-    def check_remaining_seats(self):
-        return self.ticket_count
-    
-    def display_booked_details(self):
-        return self.booked_seats
 
-        
-    
-    def practice(self):
-        print(self.available_rows)
-        print(self.available_cols)
+        n = int(input("Enter the number of seats you want to book: "))
+
+        if n > self.hall_data[m]['ticket_count']:
+            print(f"There are only {self.hall_data[m]['ticket_count']} seats left for this show.")
+            return
+
+        name = input("Enter your name: ")
+        booked = 0
+        booked_seats_list = []
+        while booked < n:
+            self._display_movie_seats(m)
+            print("""
+            Seats marked as 'X' are reserved and cannot be booked.
+            Seats marked as '0' are available.
+            """)
+            print("Available rows:", self.available_rows)
+            print("Available columns:", self.available_cols)
+
+            row = input("Choose your row from the given list: ").upper()
+            colm = input("Choose your column from the given list: ")
+            seat_num = f"{row}{colm}"
+
+            if row not in self.available_rows or colm not in self.available_cols:
+                print("\n\t---- Please enter only the elements given in the list ----")
+                continue
+
+            if (m, seat_num) in self.booked_seats:
+                print("This seat is already booked for this movie. Choose another.")
+                continue
+
+            self.booked_seats[(m, seat_num)] = [name, m, seat_num]
+            self.hall_data[m]['alpha_dict'][row][int(colm)] = 'X'
+            self.hall_data[m]['ticket_count'] -= 1
+            booked_seats_list.append(seat_num)
+            booked += 1
+            print(f"Seat {seat_num} successfully booked for {name} in '{self.movie_list[m]}'.")
+
+        self.update_booking_csv(name, self.login.current_user, self.movie_timings[0], booked_seats_list, m, 'booked')
+
+    def display_ticket_details(self):
+        for key, val in self.movie_list.items():
+            print(f"{key}. {val}")
+        movie_id = int(input("Enter the movie number: "))
+        ticket_id = input("Enter your ticket id (e.g., A1): ")
+        key = (movie_id, ticket_id)
+        if key in self.booked_seats:
+            return self.booked_seats[key]
+        else:
+            return "Ticket not found. Please enter correct movie number and ticket id."
+
+    def cancel_ticket(self):
+        for key, val in self.movie_list.items():
+            print(f"{key}. {val}")
+        movie_id = int(input("Enter the movie number: "))
+        ticket_id = input("Enter your ticket id to cancel (e.g., A1): ")
+        key = (movie_id, ticket_id)
+        if key in self.booked_seats:
+            name = self.booked_seats[key][0]
+            self.booked_seats.pop(key)
+            self.hall_data[movie_id]['alpha_dict'][ticket_id[0]][int(ticket_id[1])] = 0
+            self.hall_data[movie_id]['ticket_count'] += 1
+            print(f"{ticket_id} cancelled successfully for '{self.movie_list[movie_id]}'")
+            self.update_booking_csv(name, self.login.current_user, self.movie_timings[0], [ticket_id], movie_id, 'cancelled')
+        else:
+            print("Ticket not found for this movie.")
+
+    def check_remaining_seats(self):
+        for movie_id in self.movie_list:
+            print(f"{self.movie_list[movie_id]}: {self.hall_data[movie_id]['ticket_count']}")
+
+    def display_booked_details(self):
+        for key, value in self.booked_seats.items():
+            movie_id, seat = key
+            print(f"Movie: {self.movie_list[movie_id]}, Seat: {seat}, Name: {value[0]}")
+
 
 class Login:
     def __init__(self, file1='csvs/login_details.csv', file2='csvs/booking_details.csv'):
@@ -125,7 +168,7 @@ class Login:
         self.booking_data = self.load_booking_data()
         self.login_size = len(self.login_data)
         self.booking_size = len(self.booking_data)
-
+        self.current_user = None
 
     def load_login_data(self):
         try:
@@ -134,20 +177,20 @@ class Login:
                 return list(reader1)
         except FileNotFoundError:
             return [['Username', 'Password']]
-        
+
     def load_booking_data(self):
         try:
             with open(self.file2, 'r') as csvfile:
                 reader2 = csv.reader(csvfile)
                 return list(reader2)
         except FileNotFoundError:
-            return [['UserId', 'UserName', '[date, show_timing, no._of_seats, movie_name]']]
+            return [['Date', 'UserName', 'UID', 'Show_Timing', 'No_of_Seats', 'Seat_Numbers', 'Movie_Name', 'Ticket_Status']]
 
     def save_login_data(self):
         with open(self.file1, 'w', newline='') as csvfile:
             writer1 = csv.writer(csvfile)
             writer1.writerows(self.login_data)
-        
+
     def save_booking_data(self):
         with open(self.file2, 'w', newline='') as csvfile:
             writer2 = csv.writer(csvfile)
@@ -200,9 +243,10 @@ class Login:
                 for i in range(5, 0, -1):
                     password = input("Enter your password: ")
                     if user[1] == password:
-                        print("Signed in succesfully")
+                        print("Signed in successfully")
+                        self.current_user = username
 
-                        t = Theatre()
+                        t = Theatre(self)
                         t.seats(3)
 
                         while True:
@@ -222,32 +266,36 @@ class Login:
 
                             elif choice == '2':
                                 t.display_seats()
+
                             elif choice == '3':
                                 t.cancel_ticket()
+
                             elif choice == '4':
                                 print(t.display_ticket_details())
+
                             elif choice == '5':
-                                print(t.check_remaining_seats())
+                                t.check_remaining_seats()
+
                             elif choice == '6':
-                                print(t.display_booked_details())
+                                t.display_booked_details()
+
                             elif choice == '7':
                                 print("Exiting the system. Thank you!")
-                                break
+                                return
+
                             else:
                                 print("Invalid choice. Please enter a number between 1 and 7.")
-
-                        return
-                    print(f"Incorrect password and you have ({i-1}) attempts left")
+                    else:
+                        print(f"Incorrect password and you have ({i-1}) attempts left")
                 return
             else:
                 print("User not found.")
-            
+
             if username == "":
                 break
 
 k = Login()
-# print(k.sign_up())
-# print(k.sign_in())
+
 
 while True:
     print("\n--- Theatre Booking Login System ---")
@@ -260,7 +308,7 @@ while True:
     if choice == '1':
         print(k.sign_up())
     elif choice == '2':
-        print(k.sign_in())
+        k.sign_in()
     elif choice == '3':
         print("Closing the Login portal. Thank You!")
         break
