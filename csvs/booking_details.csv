@@ -14,5 +14,28 @@ DATE,NAME,UID,MOVIE_TIME,NO_OF_SEATS,SEAT_NUMBER(s),MOVIE_NAME,TICKET_STATUS
 2025-06-16,joker,9999999999,9:30,1,B1,Kal Ho Na Ho,booked
 2025-06-16,rushik,9014150918,9:30,1,['A2'],Kal Ho Na Ho,booked
 2025-06-16,rr,9014150918,9:30,1,['A2'],Baahubali 2,booked
-9014150918,unknown,"['2025-06-18 11:23', '12:30', 1, 'Baahubali 2']"
-9014150918,random,"['2025-06-18 11:24', '11:30', 1, 'War 2']"
+
+2025-06-18,user1,9876434445,9:30,1,['A0'],Baahubali 2,booked
+2025-06-18,userrrr,9014150918,9:30,1,['A1'],Baahubali 2,booked
+2025-06-18,sssss,9440510262,9:30,1,['A0'],Baahubali 2,booked
+2025-06-18,a,9440510262,9:30,1,['A0'],Baahubali 2,booked
+2025-06-18,w,9440510262,9:30,1,['B0'],Baahubali 2,booked
+2025-06-18,user0,9014150918,9:30,1,['A0'],Baahubali 2,booked
+2025-06-18,rama,9440510262,9:30,1,['A0'],Baahubali 2,booked
+2025-06-19,amb,9440510262,9:30,1,['A0'],Baahubali 2,booked
+2025-06-19,rambo,9440510262,9:30,1,['A1'],Baahubali 2,booked
+2025-06-19,nnano,9440510262,9:30,1,['A0'],Baahubali 2,booked
+2025-06-19,omkar,9014150918,9:30,1,['A0'],Baahubali 2,booked
+2025-06-19,om,9014150918,9:30,1,['A0'],Baahubali 2,booked
+2025-06-19,nandy,9441295929,9:30,1,['A0'],Baahubali 2,booked
+2025-06-19,ashu,9014150918,9:30,1,['B2'],Baahubali 2,booked
+2025-06-19,venkat,9441295929,9:30,1,['A0'],Baahubali 2,cancelled
+2025-06-19,omegle,9014150918,12:30,1,['C2'],Baahubali 2,booked
+2025-06-19,omegle,9014150918,11:30,1,['C1'],Baahubali 2,booked
+2025-06-19,omegle,9014150918,9:30,1,['C2'],Baahubali 2,cancelled
+2025-06-19,rambo,9014150918,9:30,1,['A1'],Baahubali 2,cancelled
+2025-06-19,rr,9014150918,9:30,1,['A2'],Baahubali 2,cancelled
+2025-06-19,rr,9014150918,9:30,1,['A2'],Baahubali 2,booked
+2025-06-19,Bunny,7306554539,11:30,1,['A1'],Kal Ho Na Ho,booked
+2025-06-19,Bunny,7306554539,12:30,2,"['A0', 'C2']",War 2,booked
+2025-06-19,karthik,9014150918,12:30,1,['B1'],War 2,booked
