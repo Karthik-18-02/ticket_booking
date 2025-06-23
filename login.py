@@ -16,36 +16,41 @@ class Theatre:
             6: {"name": "50 First Dates", "price": 200},
         }
         self.movie_timings = ["9:30", "12:30", "4:00", "7:30", "11:30"]
-    
+        
         self.hall_data = {}
+        self.n = None
+        self.available_rows = None
+        self.available_cols = None
+        self.col = None
         self.booking_history = []
+        
+        self.seats(3)
+        self._load_booking_history()
 
     def seats(self, n):
         self.n = n
         self.col = [i for i in range(n)]
         self.available_rows = [chr(65 + i) for i in range(n)]
         self.available_cols = [str(i) for i in range(n)]
-
-        for movie_id in self.movie_list:
-            alpha_dict = {}
-            alpha_chr = 65
-            for _ in range(n):
-                alpha_dict[chr(alpha_chr)] = [0 for _ in range(n)]
-                alpha_chr += 1
-            self.hall_data[movie_id] = {
-                'alpha_dict': alpha_dict,
-                'ticket_count': n * n,
-                'booked_seats': {}
-            }
+        
+        self.hall_data = {
+            movie_id: {
+                'timings': {
+                    time: {  
+                        'alpha_dict': {row: [0]*self.n for row in self.available_rows},
+                        'booked_seats': {},
+                        'ticket_count': self.n * self.n
+                    } for time in self.movie_timings
+                }
+            } for movie_id in self.movie_list
+        }
 
     def _load_booking_history(self):
-        """Load booking history from CSV and update seat availability"""
         if not os.path.exists(self.login.file2):
             return
 
         reverse_movie_map = {movie_data["name"]: movie_id 
                             for movie_id, movie_data in self.movie_list.items()}
-        current_status = {}
 
         try:
             with open(self.login.file2, 'r') as f:
@@ -69,51 +74,57 @@ class Theatre:
                     try:
                         movie_name = row[MOVIE_NAME]
                         seats_str = row[SEAT_NUMBERS]
-                        status = row[TICKET_STATUS]
+                        status = row[TICKET_STATUS].lower()
                         username = row[USERNAME]
                         uid = row[UID]
                         show_timing = row[SHOW_TIMING]
                         price = int(row[TOTAL_PRICE]) if row[TOTAL_PRICE].isdigit() else None
                         
-                        seat_list = ast.literal_eval(seats_str) if seats_str.startswith('[') else [seats_str]
+                        if status != 'booked':
+                            continue
+                            
+                        if movie_name not in reverse_movie_map:
+                            continue
+                        movie_id = reverse_movie_map[movie_name]
+                        
+                        if show_timing not in self.movie_timings:
+                            continue
+                            
+                        try:
+                            seat_list = ast.literal_eval(seats_str) if seats_str.startswith('[') else [seats_str]
+                        except:
+                            seat_list = [seats_str]
                         
                         for seat in seat_list:
-                            key = (movie_name, seat)
-                            current_status[key] = (status, username, show_timing, uid, price)
+                            row_char = seat[0].upper()
+                            col_str = seat[1:] if len(seat) > 1 else seat
                             
-                    except (ValueError, SyntaxError, IndexError) as e:
-                        print(f"Skipping invalid row: {e}")
-                        continue
-
-            for (movie_name, seat), (status, username, show_timing, uid, price) in current_status.items():
-                if status.lower() == 'booked':
-                    if movie_name in reverse_movie_map:
-                        movie_id = reverse_movie_map[movie_name]
-                        row_char = seat[0]
-                        col_str = seat[1:] if len(seat) > 1 else seat
-                        
-                        if (row_char in self.available_rows and 
-                            col_str in self.available_cols and
-                            movie_id in self.hall_data):
-                            
-                            try:
-                                col_index = int(col_str)
-                                hall = self.hall_data[movie_id]
-                                
-                                if hall['alpha_dict'][row_char][col_index] == 0:
-                                    hall['alpha_dict'][row_char][col_index] = 'X'
-                                    hall['ticket_count'] -= 1
-                                    hall['booked_seats'][seat] = [
-                                        username,       
-                                        movie_id,       
-                                        seat,           
-                                        show_timing,    
-                                        uid,            
-                                        price if price is not None else self.movie_list[movie_id]['price'] 
-                                    ]
-                            except (ValueError, IndexError) as e:
-                                print(f"Invalid seat data {seat}: {e}")
+                            if (row_char not in self.available_rows or 
+                                not col_str.isdigit() or 
+                                int(col_str) not in self.col):
                                 continue
+                                
+                            col_index = int(col_str)
+                            
+                            timing_data = self.hall_data[movie_id]['timings'][show_timing]
+                            
+                            if timing_data['alpha_dict'][row_char][col_index] == 'X':
+                                continue
+                                
+                            timing_data['alpha_dict'][row_char][col_index] = 'X'
+                            timing_data['ticket_count'] -= 1
+                            timing_data['booked_seats'][seat] = [
+                                username,
+                                movie_id,
+                                seat,
+                                show_timing,
+                                uid,
+                                price if price is not None else self.movie_list[movie_id]['price']
+                            ]
+                            
+                    except (ValueError, SyntaxError, IndexError, KeyError) as e:
+                        print(f"Skipping invalid booking record: {e}")
+                        continue
 
         except Exception as e:
             print(f"Error loading booking history: {e}")
@@ -129,12 +140,12 @@ class Theatre:
                 print("Invalid movie number.")
                 return
 
-            print(f"\n--- Seating for '{self.movie_list[movie_id]['name']}' ---")
-            hall = self.hall_data[movie_id]
-            print("  ", " ".join(str(col) for col in self.col)) 
-            
-            for row_label, seats in hall['alpha_dict'].items():
-                print(f"{row_label}:", " ".join(str(seat) if seat != 0 else '.' for seat in seats)) 
+            print(f"\n--- Seating for '{self.movie_list[movie_id]['name']} ---")
+            for timing, data in self.hall_data[movie_id]['timings'].items():
+                print(f"\n{timing} Show:")
+                print("  ", " ".join(str(col) for col in self.col))
+                for row_label, seats in data['alpha_dict'].items():
+                    print(f"{row_label}:", " ".join(str(seat) if seat != 0 else '.' for seat in seats))
 
         except ValueError:
             print("Please enter a valid number.")
@@ -201,15 +212,21 @@ class Theatre:
             except ValueError:
                 print("Please enter a number only.")
 
+        show_time = self.get_movie_timing()
+        if show_time is None:
+            return
+
+        timing_data = self.hall_data[m]['timings'][show_time]
+        
         while True:
             try:
-                n = input("Enter the number of seats you want to book: ")
+                n = input(f"Enter the number of seats you want to book for {show_time}: ")
                 n = int(n)
                 if n <= 0:
                     print("Please enter a positive number.")
                     continue
-                if n > self.hall_data[m]['ticket_count']:
-                    print(f"There are only {self.hall_data[m]['ticket_count']} seats left for this show.")
+                if n > timing_data['ticket_count']:
+                    print(f"There are only {timing_data['ticket_count']} seats left for this show.")
                     continue
                 break
             except ValueError:
@@ -235,21 +252,21 @@ class Theatre:
         else:
             print(f"\nWelcome back, {user_name}!")
 
-        show_time = self.get_movie_timing()
-        if show_time is None:
-            return
-
         booked = 0
         booked_seats_list = []
         selected_seats = set()  
         
         while booked < n:
-            try:
-                self._display_movie_seats(m)
-                print("\nSeats marked 'X' are booked, '.' are available")
-                print(f"Available rows: {self.available_rows}")
-                print(f"Available columns: {self.available_cols}")
+            print(f"\n--- Seating for '{self.movie_list[m]['name']}' at {show_time} ---")
+            print("  ", " ".join(str(col) for col in self.col)) 
+            for row_label, seats in timing_data['alpha_dict'].items():
+                print(f"{row_label}:", " ".join(str(seat) if seat != 0 else '.' for seat in seats))
+            
+            print("\nSeats marked 'X' are booked, '.' are available")
+            print(f"Available rows: {self.available_rows}")
+            print(f"Available columns: {self.available_cols}")
 
+            try:
                 row = input("Choose row: ").upper()
                 colm = input("Choose column: ")
                 
@@ -265,8 +282,8 @@ class Theatre:
                     print("You've already selected this seat in current booking. Choose another.")
                     continue
                     
-                if self.hall_data[m]['alpha_dict'][row][int(colm)] == 'X':
-                    print("Seat already booked by someone else. Choose another.")
+                if timing_data['alpha_dict'][row][int(colm)] == 'X':
+                    print("Seat already booked for this show time. Choose another.")
                     continue
                     
                 selected_seats.add(seat_num)
@@ -278,7 +295,7 @@ class Theatre:
                 continue
 
         total_price = self.movie_list[m]["price"] * n
-        print(f"\nTOTAL AMOUNT: ₹{total_price} for {n} seat(s)")
+        print(f"\nTOTAL AMOUNT: ₹{total_price} for {n} seat(s) at {show_time}")
         print(f"Selected Seats: {', '.join(booked_seats_list)}")
         
         while True:
@@ -287,15 +304,15 @@ class Theatre:
                 for seat in booked_seats_list:
                     row_char = seat[0]
                     col_index = int(seat[1:])
-                    self.hall_data[m]['booked_seats'][seat] = [
+                    timing_data['booked_seats'][seat] = [
                         user_name, 
                         m, 
                         seat, 
                         show_time, 
                         self.login.current_user
                     ]
-                    self.hall_data[m]['alpha_dict'][row_char][col_index] = 'X'
-                    self.hall_data[m]['ticket_count'] -= 1
+                    timing_data['alpha_dict'][row_char][col_index] = 'X'
+                    timing_data['ticket_count'] -= 1
                 
                 self.update_booking_csv(
                     user_name, 
@@ -325,91 +342,134 @@ class Theatre:
         print(f"Show Time: {last_booking[3]} | Seats: {last_booking[5]} ({last_booking[4]})")
         print(f"Movie: {last_booking[6]} | Price: ₹{last_booking[7]} | Status: {last_booking[8]}")
 
-    def cancel_ticket(self):
-        print("\nAvailable Movies:")
-        for key, val in self.movie_list.items():
-            print(f"{key}. {val['name']}") 
-        
-        try:
-            movie_id = int(input("Enter the movie number: "))
-            if movie_id not in self.hall_data:
-                print("Invalid movie number.")
-                return
-            
-            ticket_id = input("Enter your ticket id to cancel (e.g., A1): ").upper()
-            hall = self.hall_data[movie_id]
-            
-            if ticket_id not in hall['booked_seats']:
-                print("Ticket not found for this movie.")
-                return
-                
-            booking_details = hall['booked_seats'][ticket_id]
-            booked_user_id = booking_details[4] if len(booking_details) > 4 else booking_details[0]
 
-            if booked_user_id != self.login.current_user:
-                print("\nERROR: You can only cancel tickets you've booked yourself!")
+    def cancel_ticket(self):
+        print("\n--- Your Booked Tickets ---")
+        user_tickets = []
+        
+        for movie_id, movie_data in self.hall_data.items():
+            for show_time, timing_data in movie_data['timings'].items():
+                for seat, details in timing_data['booked_seats'].items():
+                    if len(details) > 4 and details[4] == self.login.current_user:
+                        user_tickets.append({
+                            'movie_id': movie_id,
+                            'movie': self.movie_list[movie_id]['name'],
+                            'show_time': show_time,
+                            'seat': seat,
+                            'details': details
+                        })
+        
+        if not user_tickets:
+            print("You have no tickets booked.")
+            return
+        
+        for i, ticket in enumerate(user_tickets, 1):
+            print(f"{i}. {ticket['movie']} | Seat: {ticket['seat']} | Time: {ticket['show_time']}")
+
+        try:
+            choice = int(input("\nEnter the number of ticket to cancel (0 to exit): "))
+            if choice == 0:
+                return
+            if choice < 1 or choice > len(user_tickets):
+                print("Invalid selection.")
                 return
                 
-            row_char = ticket_id[0]
-            col_index = int(ticket_id[1:])
+            selected_ticket = user_tickets[choice-1]
+            movie_id = selected_ticket['movie_id']
+            show_time = selected_ticket['show_time']
+            seat = selected_ticket['seat']
             
+            timing_data = self.hall_data[movie_id]['timings'][show_time]
+            booking_details = timing_data['booked_seats'][seat]
+            
+            row_char = seat[0]
+            col_index = int(seat[1:])
             refund_amount = -self.movie_list[movie_id]['price']
             
-            hall['booked_seats'].pop(ticket_id)
-            hall['alpha_dict'][row_char][col_index] = 0
-            hall['ticket_count'] += 1
+            timing_data['booked_seats'].pop(seat)
+            timing_data['alpha_dict'][row_char][col_index] = 0
+            timing_data['ticket_count'] += 1
             
-            print(f"\n{ticket_id} cancelled successfully for '{self.movie_list[movie_id]['name']}'")
-            print(f"₹{refund_amount} is successfully refunded")
+            print(f"\n{seat} cancelled successfully for '{self.movie_list[movie_id]['name']}' at {show_time}")
+            print(f"₹{abs(refund_amount)} will be refunded")
             
             self.update_booking_csv(
                 booking_details[0], 
                 self.login.current_user, 
-                booking_details[3], 
-                [ticket_id], 
+                show_time, 
+                [seat], 
                 movie_id,
                 'cancelled',
                 refund_amount 
             )
             
         except ValueError:
-            print("Please enter valid numbers.")
+            print("Please enter a valid number.")
 
 
     def check_remaining_seats(self):
-        for movie_id in self.movie_list:
-            print(f"{self.movie_list[movie_id]['name']}: {self.hall_data[movie_id]['ticket_count']}")
+        print("\nRemaining Seats Per Movie:")
+        print(f"{'Movie':<20} | {'Show Time':<10} | {'Available Seats'}")
+        print("-" * 50)
+        
+        for movie_id, movie_data in self.movie_list.items():
+            movie_name = movie_data['name']
+            timing_data = self.hall_data[movie_id]['timings']
+            
+            for show_time, data in timing_data.items():
+                print(f"{movie_name:<20} | {show_time:<10} | {data['ticket_count']}")
+            print("-" * 50)
+
 
     def display_booked_details(self):
         all_booked_seats = []
         
-        for movie_id, hall in self.hall_data.items():
-            for seat, details in hall['booked_seats'].items():
-                name = details[0]
-                timing = details[3]  
-                movie_name = self.movie_list[movie_id]['name']
-                movie_price = self.movie_list[movie_id]['price']
-                all_booked_seats.append((seat, name, movie_name, timing, movie_price))
+        for movie_id, movie_data in self.hall_data.items():
+            for show_time, timing_data in movie_data['timings'].items():
+                for seat, details in timing_data['booked_seats'].items():
+                    name = details[0]
+                    movie_name = self.movie_list[movie_id]['name']
+                    movie_price = self.movie_list[movie_id]['price']
+                    all_booked_seats.append((
+                        seat, 
+                        name, 
+                        movie_name, 
+                        show_time, 
+                        movie_price,
+                        details[4] if len(details) > 4 else "N/A" 
+                    ))
         
         all_booked_seats.sort(key=lambda x: (x[0][0], int(x[0][1:])))
         
-        for seat, name, movie_name, timing, movie_price in all_booked_seats:
-            print(f"{seat} → [{name}, {movie_name}, {timing}, {seat}, {movie_price}]")
+        print("\nAll Booked Tickets:")
+        print(f"{'Seat':<5} | {'User':<15} | {'Movie':<20} | {'Time':<8} | {'Price':<6} | {'UID'}")
+        print("-" * 80)
+        
+        for seat, name, movie_name, timing, price, uid in all_booked_seats:
+            print(f"{seat:<5} | {name:<15} | {movie_name:<20} | {timing:<8} | ₹{price:<4} | {uid}")
+
 
     def view_my_bookings(self):
         print("\n--- Your Booked Tickets ---")
         found = False
         
-        for movie_id, hall in self.hall_data.items():
-            for seat, details in hall['booked_seats'].items():
-                user_id = details[4] if len(details) > 4 else details[0] 
+        if os.path.exists(self.login.file2):
+            with open(self.login.file2, 'r') as f:
+                reader = csv.reader(f)
+                next(reader) 
                 
-                if user_id == self.login.current_user:
-                    movie_name = self.movie_list[movie_id]['name']
-                    show_time = details[3] if len(details) > 3 else "Unknown"
-                    print(f"Date: {datetime.today().date()} | Movie: {movie_name} | Seat: {seat} | Show: {show_time} | Price: {self.movie_list[movie_id]['price']}/-")
-                    found = True
-                    
+                for row in reader:
+                    if len(row) >= 9 and row[2] == self.login.current_user and row[8].lower() == 'booked':
+                        print(f"Date: {row[0]} | Movie: {row[6]} | Seats: {row[5]} | Show: {row[3]} | Price: ₹{row[7]}")
+                        found = True
+        
+        for movie_id, movie_data in self.hall_data.items():
+            for show_time, timing_data in movie_data['timings'].items():
+                for seat, details in timing_data['booked_seats'].items():
+                    if len(details) > 4 and details[4] == self.login.current_user:
+                        print(f"[Active] Movie: {self.movie_list[movie_id]['name']} | Seat: {seat} | Show: {show_time} | Price: ₹{self.movie_list[movie_id]['price']}")
+                        found = True
+        
         if not found:
             print("You have no booked tickets.")
 
@@ -450,9 +510,7 @@ class Theatre:
             print("No booking history available yet.")
             return
         
-        print(f"\n{'*'*40}")
-        print(f"BOOKING HISTORY FOR USER: {self.login.current_user}")
-        print(f"{'*'*40}\n")
+        print(f"BOOKING HISTORY FOR USER: {self.login.current_user} ")
         
         with open(self.login.file2, 'r') as f:
             reader = csv.reader(f)
@@ -480,7 +538,6 @@ class Theatre:
                 print("No history records found for this user.")
         
     def reset_seats(self):
-        """Resets seats for specific movie or all movies"""
         print("\nSelect reset option:")
         print("1. Reset seats for a specific movie")
         print("2. Reset all seats (all movies)")
@@ -659,8 +716,8 @@ class Login:
                         self.current_user = username
 
                         t = Theatre(self)
-                        t.seats(3)
-                        t._load_booking_history()
+                        # t.seats(3)
+                        # t._load_booking_history()
 
                         while True:
                             print("\n--- Theatre Booking System ---")
