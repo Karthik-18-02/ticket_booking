@@ -25,3 +25,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# screen(dynamic), payment(wallet), admin

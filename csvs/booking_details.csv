@@ -64,3 +64,24 @@ DATE,NAME,UID,MOVIE_TIME,NO_OF_SEATS,SEAT_NUMBER(s),MOVIE_NAME,TIKCET_PRICE,TICK
 2025-06-23,karthik,9014150918,9:30,1,['A0'],Baahubali 2,200,booked
 2025-06-23,karthik,9014150918,12:30,1,['B2'],Baahubali 2,-200,cancelled
 2025-06-24,karthik,9014150918,4:00,2,"['A0', 'B1']",Kal Ho Na Ho,400,booked
+2025-06-24,karthik,9014150918,7:30,2,"['A0', 'B1']",Baahubali 2,400,booked
+2025-06-24,karthik,9014150918,7:30,1,['A0'],Baahubali 2,-200,cancelled
+2025-06-24,karthik,9014150918,7:30,1,['A0'],Inception,200,booked
+2025-06-25,rushik,9999999999,7:30,2,"['A0', 'A1']",Pushpa,400,booked
+2025-06-25,rushik,9999999999,7:30,1,['A0'],Pushpa,-200,cancelled
+2025-06-25,venkat,9440510262,11:30,2,"['A0', 'B2']",War 2,400,booked
+2025-06-25,venkat,9440510262,4:00,2,"['B2', 'C1']",Inception,400,booked
+2025-06-25,venkat,9440510262,4:00,2,"['B2', 'C1']",Inception,400,booked
+2025-06-25,venkat,9440510262,4:00,2,"['B2', 'C1']",Inception,400,booked
+2025-06-25,venkat,9440510262,4:00,2,"['B2', 'C1']",Inception,400,booked
+2025-06-25,venkat,9440510262,4:00,2,"['B2', 'C1']",Inception,400,booked
+2025-06-25,venkat,9440510262,4:00,2,"['B2', 'C1']",Inception,400,booked
+2025-06-25,venkat,9440510262,4:00,2,"['B2', 'C1']",Inception,400,booked
+2025-06-25,venkat,9440510262,4:00,2,"['B2', 'C1']",Inception,400,booked
+2025-06-25,venkat,9440510262,4:00,2,"['B2', 'C1']",Inception,400,booked
+2025-06-25,venkat,9440510262,4:00,2,"['B2', 'C1']",Inception,400,booked
+2025-06-25,venkat,9440510262,4:00,2,"['B2', 'C1']",Inception,400,booked
+2025-06-25,venkat,9440510262,4:00,2,"['B2', 'C1']",Inception,400,booked
+2025-06-25,karthik,9014150918,11:30,2,"['A1', 'A2']",War 2,400,booked
+2025-06-25,karthik,9014150918,7:30,1,['A2'],Baahubali 2,200,booked
+2025-06-28,karthik,9014150918,11:30,2,"['A0', 'A1']",Baahubali 2,400,booked

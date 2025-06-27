@@ -231,6 +231,17 @@ class Theatre:
             except ValueError:
                 print("Invalid input. Please enter a number only.")
 
+        total_price = self.movie_list[m]["price"] * n
+        
+        balance = self.login.check_balance(self.login.current_user)
+        print(f"\nYour current balance: ₹{balance}")
+        print(f"Total booking amount: ₹{total_price}")
+        
+        if balance < total_price:
+            print("\nInsufficient balance!")
+            print(f"You need ₹{total_price - balance} more to book these tickets.")
+            return
+
         user_name = None
         if os.path.exists(self.login.file2):
             with open(self.login.file2, 'r') as f:
@@ -293,42 +304,58 @@ class Theatre:
                 print("Invalid input. Please try again.")
                 continue
 
-        total_price = self.movie_list[m]["price"] * n
+
         print(f"\nTOTAL AMOUNT: ₹{total_price} for {n} seat(s) at {show_time}")
         print(f"Selected Seats: {', '.join(booked_seats_list)}")
+        print(f"Your current balance: ₹{balance}")
         
         while True:
             confirm = input("Confirm payment and book tickets? (y/n): ").lower()
+            
             if confirm == 'y':
-                for seat in booked_seats_list:
-                    row_char = seat[0]
-                    col_index = int(seat[1:])
-                    timing_data['booked_seats'][seat] = [
+                try:
+                    total_price = self.movie_list[m]["price"] * len(booked_seats_list)
+                    new_balance = self.login.add_to_wallet(self.login.current_user, -total_price)
+                    print(f"\n₹{total_price} deducted. New balance: ₹{new_balance}")
+                    
+                    for seat in booked_seats_list:
+                        row_char = seat[0]
+                        col_index = int(seat[1:])
+                        timing_data['booked_seats'][seat] = [
+                            user_name, 
+                            m, 
+                            seat, 
+                            show_time, 
+                            self.login.current_user,
+                            self.movie_list[m]["price"]
+                        ]
+                        timing_data['alpha_dict'][row_char][col_index] = 'X'
+                        timing_data['ticket_count'] -= 1
+                    
+                    self.update_booking_csv(
                         user_name, 
-                        m, 
-                        seat, 
+                        self.login.current_user, 
                         show_time, 
-                        self.login.current_user
-                    ]
-                    timing_data['alpha_dict'][row_char][col_index] = 'X'
-                    timing_data['ticket_count'] -= 1
-                
-                self.update_booking_csv(
-                    user_name, 
-                    self.login.current_user, 
-                    show_time, 
-                    booked_seats_list, 
-                    m, 
-                    'booked',
-                    total_price
-                )
-                print(f"\nBooking confirmed! Enjoy '{self.movie_list[m]['name']}' at {show_time}")
-                break
+                        booked_seats_list, 
+                        m, 
+                        'booked',
+                        total_price
+                    )
+                    print(f"\nBooking confirmed! Enjoy '{self.movie_list[m]['name']}' at {show_time}")
+                    break
+                    
+                except Exception as e:
+                    print(f"Payment failed: {e}")
+                    print("Booking cancelled due to payment error")
+                    break
+            
             elif confirm == 'n':
                 print("Booking cancelled. Seats released.")
                 break
+            
             else:
                 print("Please enter 'y' or 'n'")
+
 
     def display_ticket_details(self):
         if not self.booking_history:
@@ -383,14 +410,15 @@ class Theatre:
             
             row_char = seat[0]
             col_index = int(seat[1:])
-            refund_amount = -self.movie_list[movie_id]['price']
+            refund_amount = self.movie_list[movie_id]['price']
             
             timing_data['booked_seats'].pop(seat)
             timing_data['alpha_dict'][row_char][col_index] = 0
             timing_data['ticket_count'] += 1
-            
+                    
+            new_balance = self.login.add_to_wallet(self.login.current_user, abs(refund_amount))
             print(f"\n{seat} cancelled successfully for '{self.movie_list[movie_id]['name']}' at {show_time}")
-            print(f"₹{abs(refund_amount)} will be refunded")
+            print(f"₹{abs(refund_amount)} has been refunded to your wallet. New balance: ₹{new_balance}")
             
             self.update_booking_csv(
                 booking_details[0], 
@@ -399,7 +427,7 @@ class Theatre:
                 [seat], 
                 movie_id,
                 'cancelled',
-                refund_amount 
+                -refund_amount 
             )
             
         except ValueError:
