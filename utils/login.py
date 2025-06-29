@@ -1,21 +1,73 @@
 import csv
 import re
 import os
+from datetime import datetime
 
 from utils.theatre import Theatre
+from utils.admin import Admin
 
 class Login:
     def __init__(self, file1='csvs/login_details.csv', file2='csvs/booking_details.csv'):
         self.file1 = file1
         self.file2 = file2
         self.current_user = None
+        self.is_admin = False
         self.login_data = self.load_login_data()
         self.booking_data = self.load_booking_data()
         self.user_wallets = {}
+        self.wallet_history_file = 'csvs/wallet_history.csv' 
         self._init_files()
         self._load_wallets() 
         self.login_size = len(self.login_data)
         self.booking_size = len(self.booking_data)
+        self.user_names = {} 
+        self._load_user_names()
+        self._init_wallet_history_file() 
+
+    def _init_wallet_history_file(self):
+        """Initialize wallet history file with proper headers"""
+        os.makedirs('csvs', exist_ok=True)
+        headers = ['Date', 'Time', 'Username', 'Amount', 'Balance', 'Description']
+        
+        try:
+            # Check if file exists and has correct headers
+            if os.path.exists(self.wallet_history_file):
+                with open(self.wallet_history_file, 'r') as f:
+                    first_line = f.readline().strip()
+                
+                # If headers don't match, create backup
+                if first_line != ','.join(headers):
+                    try:
+                        backup_name = f"{self.wallet_history_file}.bak"
+                        # Ensure all file handles are closed before renaming
+                        if os.path.exists(backup_name):
+                            os.remove(backup_name)
+                        os.rename(self.wallet_history_file, backup_name)
+                        print(f"Created backup of invalid wallet history: {backup_name}")
+                    except PermissionError:
+                        print("Warning: Could not create backup - file may be locked by another process")
+        
+            # Write new file if it doesn't exist or was backed up
+            if not os.path.exists(self.wallet_history_file):
+                with open(self.wallet_history_file, 'w', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(headers)
+                    
+        except Exception as e:
+            print(f"Warning: Could not initialize wallet history file - {str(e)}")
+            print("The system will try to create a new file when first transaction occurs")
+                    
+        except Exception as e:
+            print(f"Warning: Could not initialize wallet history - {str(e)}")
+
+    def _load_user_names(self):
+        """Load user names from booking history"""
+        if os.path.exists(self.file2):
+            with open(self.file2, 'r') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if row.get('UserName') and row.get('UID'):
+                        self.user_names[row['UID']] = row['UserName']
 
     def _load_wallets(self):
         self.user_wallets = {}  
@@ -34,76 +86,156 @@ class Login:
                         except (ValueError, IndexError):
                             self.user_wallets[username] = 1000
 
-    def check_balance(self, username):
-        # print(self.user_wallets)
-        if username in self.user_wallets:
-            return self.user_wallets[username]
-        
+    def add_to_wallet(self, username, amount, description=""):
+        """Add or deduct money from wallet and record transaction history"""
         try:
-            with open(self.file1, 'r') as f:
-                reader = csv.reader(f)
-                headers = next(reader, [])
-                wallet_index = headers.index('WalletBalance') if 'WalletBalance' in headers else 2
-                
-                for row in reader:
-                    if row and row[0] == username:
-                        try:
-                            balance = int(row[wallet_index]) if len(row) > wallet_index else 1000
-                            self.user_wallets[username] = balance
-                            return balance
-                        except (ValueError, IndexError):
-                            break
-        except Exception as e:
-            print(f"Error checking balance: {e}")
-        
-        self.user_wallets[username] = 1000
-        return 1000
+            # Validate username first
+            if not username or not self.is_validate_mobile_number(username):
+                print("Invalid username/mobile number")
+                return self.check_balance(username)
 
-    def add_to_wallet(self, username, amount):
-        try:
             current_balance = self.check_balance(username)
             new_balance = current_balance + amount
             
+            # Update in-memory balance
             self.user_wallets[username] = new_balance
             
-            temp_file = self.file1 + '.tmp'
-            updated = False
-            headers = ['Username', 'Password', 'WalletBalance']
+            # Update wallet file
+            wallet_file = 'csvs/user_wallets.csv'
+            wallet_data = []
+            fieldnames = ['Username', 'WalletBalance']
             
-            with open(self.file1, 'r') as infile, open(temp_file, 'w', newline='') as outfile:
-                reader = csv.reader(infile)
-                writer = csv.writer(outfile)
-                
-                try:
-                    file_headers = next(reader)
-                    writer.writerow(file_headers)
-                    wallet_index = file_headers.index('WalletBalance') if 'WalletBalance' in file_headers else 2
-                except StopIteration:
-                    writer.writerow(headers)
-                    wallet_index = 2
-                
-                for row in reader:
-                    if row and row[0] == username:
-                        while len(row) <= wallet_index:
-                            row.append('')
-                        row[wallet_index] = str(new_balance)
-                        updated = True
-                    writer.writerow(row)
-                
-                if not updated:
-                    new_row = [username, '', str(new_balance)]
-                    while len(new_row) <= wallet_index:
-                        new_row.append('')
-                    new_row[wallet_index] = str(new_balance)
-                    writer.writerow(new_row)
+            # Read existing data
+            if os.path.exists(wallet_file):
+                with open(wallet_file, 'r') as f:
+                    reader = csv.DictReader(f)
+                    wallet_data = [row for row in reader if row.get('Username')]  # Skip empty rows
             
-            os.replace(temp_file, self.file1)
+            # Find and update user's record
+            user_found = False
+            for record in wallet_data:
+                if record['Username'] == username:
+                    record['WalletBalance'] = str(new_balance)
+                    user_found = True
+                    break
+            
+            # If not found, add new record
+            if not user_found:
+                wallet_data.append({'Username': username, 'WalletBalance': str(new_balance)})
+            
+            # Write back to file - ensuring proper formatting
+            with open(wallet_file, 'w', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                # Write all records, ensuring username is included
+                for record in wallet_data:
+                    if not record.get('Username'):
+                        continue  # Skip any records without username
+                    writer.writerow({
+                        'Username': record['Username'],
+                        'WalletBalance': record['WalletBalance']
+                    })
+            
+            # Rest of your transaction recording code...
+            now = datetime.now()
+            transaction = {
+                'Date': now.strftime('%Y-%m-%d'),
+                'Time': now.strftime('%H:%M:%S'),
+                'Username': username,
+                'Amount': amount,
+                'Balance': new_balance,
+                'Description': description
+            }
+            
+            history_file = self.wallet_history_file
+            file_exists = os.path.exists(history_file)
+            with open(history_file, 'a', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=transaction.keys())
+                if not file_exists or os.stat(history_file).st_size == 0:
+                    writer.writeheader()
+                writer.writerow(transaction)
+            
+            print(f"₹{abs(amount):.2f} {'added to' if amount > 0 else 'deducted from'} wallet successfully.")
+            print(f"New balance: ₹{new_balance:.2f}")
             return new_balance
             
         except Exception as e:
-            print(f"Error updating wallet: {e}")
-            self.user_wallets[username] = current_balance
+            print(f"\nError processing transaction: {str(e)}")
+            print("Your balance remains unchanged.")
             return current_balance
+        
+
+    def get_wallet_history(self, username):
+        """Retrieve and display wallet history for the current user"""
+        try:
+            transactions = []
+            if os.path.exists(self.wallet_history_file):
+                with open(self.wallet_history_file, 'r') as f:
+                    reader = csv.DictReader(f)
+                    if not reader.fieldnames or 'Balance' not in reader.fieldnames:
+                        print("\nWallet history format is invalid")
+                        return
+                        
+                    transactions = [
+                        {
+                            'date': row['Date'],
+                            'time': row['Time'],
+                            'amount': float(row['Amount']),
+                            'balance': float(row['Balance']) if 'Balance' in row else 0,
+                            'description': row.get('Description', '')
+                        }
+                        for row in reader if row.get('Username') == username
+                    ]
+                    # Sort by date and time (newest first)
+                    transactions.sort(key=lambda x: (x['date'], x['time']), reverse=True)
+            
+            if not transactions:
+                print("\nNo wallet transactions found.")
+                return
+
+            print("\n" + "="*85)
+            print(f"WALLET TRANSACTION HISTORY: {username}".center(85))
+            print("="*85)
+            print(f"{'Date':<12} | {'Time':<10} | {'Amount':<15} | {'Balance':<15} | {'Description'}")
+            print("-"*85)
+            
+            for t in transactions:
+                amount_str = f"+₹{t['amount']:,.2f}" if t['amount'] >= 0 else f"-₹{abs(t['amount']):,.2f}"
+                print(f"{t['date']:<12} | {t['time']:<10} | {amount_str:<15} | ₹{t['balance']:<14} | {t['description']}")
+            
+            print("="*85)
+            
+        except Exception as e:
+            print(f"\nError retrieving wallet history: {str(e)}")
+
+
+    def check_balance(self, username):
+        try:
+            # First check in-memory balance
+            # if username in self.user_wallets:
+            #     return self.user_wallets[username]
+            
+            # Then check wallet file
+            wallet_file = 'csvs/user_wallets.csv'
+            if os.path.exists(wallet_file):
+                with open(wallet_file, 'r') as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        if row.get('Username') == username:
+                            try:
+                                balance = float(row['WalletBalance'])
+                                self.user_wallets[username] = balance
+                                return balance
+                            except (ValueError, KeyError):
+                                continue
+            
+            # Default balance for new users
+            self.user_wallets[username] = 1000
+            return 1000
+            
+        except Exception as e:
+            print(f"Error checking balance: {e}")
+            return 1000
         
     def _init_files(self):
         if os.path.exists(self.file1):
@@ -183,77 +315,56 @@ class Login:
         print("\t\t ---- SIGN-IN ----")
         while True:
             username = input("Enter your mobile number: ")
+            if username == "admin":
+                password = input("Enter admin password: ")
+                if password == "admin123":
+                    print("Admin login successful")
+                    self.current_user = "admin"
+                    self.is_admin = True
+                    theatre = Theatre(self)
+                    theatre.current_user = username
+                    admin = Admin(theatre)
+                    admin.admin_menu()
+                    return
+                else:
+                    print("Invalid admin credentials")
+                    continue
+            
             user = next((user for user in self.login_data[1:] if user[0] == username), None)
             if user:
                 for i in range(3, 0, -1):
                     password = input("Enter your password: ")
                     if user[1] == password:
-                        print("Signed in successfully")
+                        # Get user's name from booking history if available
+                        user_name = self._get_user_name(username)
+                        if user_name:
+                            print(f"\nWelcome back, {user_name}!")
+                        else:
+                            print("\nSigned in successfully")
+                        
                         self.current_user = username
+                        self.is_admin = False
 
-                        l = Login()
-                        t = Theatre(self)
-                        # t.seats(3)
-                        # t._load_booking_history()
-
-                        while True:
-                            print("\n--- Theatre Booking System ---")
-                            print("1. Book Tickets")
-                            print("2. Display Seats")
-                            print("3. Cancel Ticket")
-                            print("4. Show Ticket Details")
-                            print("5. Check Remaining Seats")
-                            print("6. Check Balance")
-                            print("7. Add Money to Wallet")
-                            print("8. View User History")
-                            print("9. Reset Seats")
-                            print("10. Exit")
-
-                            choice = input("Enter your choice (1-10): ")
-
-                            if choice == '1':
-                                t.book_ticket()
-
-                            elif choice == '2':
-                                t.display_seats()
-
-                            elif choice == '3':
-                                t.cancel_ticket()
-
-                            elif choice == '4':
-                                t.display_ticket_details()
-
-                            elif choice == '5':
-                                t.check_remaining_seats()
-
-                            elif choice == '6':
-                                # t.display_booked_details()
-                                balance = l.check_balance(self.current_user)
-                                print(f"\nYour current balance: ₹{balance}")
-
-                            elif choice == '7':
-                                # t.view_my_bookings()
-                                amount = int(input("Enter amount to add: ₹"))
-                                new_balance = l.add_to_wallet(l.current_user, amount)
-                                print(f"₹{amount} added successfully. New balance: ₹{new_balance}")
-                            
-                            elif choice == '8':  
-                                t.view_history()
-
-                            elif choice == '9':
-                                t.reset_seats()
-
-                            elif choice == '10':
-                                print("Exiting the system. Thank you!")
-                                return
-                            
-                            else:
-                                print("Invalid choice. Please enter a number between 1 and 10.")
+                        theatre = Theatre(self)
+                        
+                        if self.is_admin:
+                            admin = Admin(theatre)
+                            admin.admin_menu()
+                        else:
+                            theatre.user_menu()
+                        return
                     else:
-                        print(f"Incorrect password and you have ({i-1}) attempts left")
+                        print(f"Incorrect password. You have ({i-1}) attempts left")
                 return
             else:
                 print("User not found.")
 
-            if username == "":
-                break
+    def _get_user_name(self, username):
+        """Retrieve user's name from booking history"""
+        if os.path.exists(self.file2):
+            with open(self.file2, 'r') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if row.get('UID') == username and row.get('UserName'):
+                        return row['UserName']
+        return None

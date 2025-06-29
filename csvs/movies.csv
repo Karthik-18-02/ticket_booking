@@ -1,0 +1,7 @@
+MovieID,Title,ScreenID,Price,IsActive
+1,Baahubali,SC1,300.0,No
+2,Pushpa,SC2,500.0,Yes
+3,War,SC1,200.0,No
+4,Shade,SC1,350.0,Yes
+5,Kubera,SC3,400.0,Yes
+6,Superman,SC4,700.0,Yes
