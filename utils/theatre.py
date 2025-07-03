@@ -60,7 +60,7 @@ class Theatre:
     def _load_hall_data(self):
         try:
             if not os.path.exists('csvs/hall_data.csv'):
-                return  # File doesn't exist yet (first run)
+                return
                 
             with open('csvs/hall_data.csv', 'r') as f:
                 reader = csv.DictReader(f)
@@ -74,11 +74,23 @@ class Theatre:
                     seats = row['SeatStatus'].split(',')
                     
                     if screen_id in self.hall_data and show_time in self.hall_data[screen_id]['seating']:
-                        self.hall_data[screen_id]['seating'][show_time]['alpha_dict'][row_char] = [
-                            'X' if s == 'X' else 0 for s in seats
-                        ]
+                        seat_status = []
+                        for s in seats:
+                            if s == 'X':
+                                seat_status.append('X')
+                            else:
+                                try:
+                                    seat_status.append(int(s))
+                                except ValueError:
+                                    seat_status.append(0)
                         
-                        booked_seats = sum(1 for s in seats if s == 'X')
+                        timing_data = self.hall_data[screen_id]['seating'][show_time]
+                        timing_data['alpha_dict'][row_char] = seat_status
+                        
+                        available = sum(1 for s in seat_status if s == 0)
+                        timing_data['ticket_count'] = available
+                        
+                        booked_seats = sum(1 for s in seat_status if s == 'X')
                         self.hall_data[screen_id]['seating'][show_time]['ticket_count'] = (
                             self.hall_data[screen_id]['dimensions']['rows'] * 
                             self.hall_data[screen_id]['dimensions']['cols'] - 
@@ -88,16 +100,13 @@ class Theatre:
             print(f"[Warning] Could not load hall data: {str(e)}")
 
     def _load_movies(self):
-        """Load movies from admin configuration"""
         self.movie_list = {}
         movies_file = 'csvs/movies.csv'
         
         if os.path.exists(movies_file):
-            print("\nDebug - Loading movies from file...")  # Debug line
             with open(movies_file, 'r') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    print(f"Debug - Found movie: {row}")  # Debug line
                     if row.get('IsActive', '').lower() == 'yes':
                         movie_id = int(row['MovieID'])
                         self.movie_list[movie_id] = {
@@ -105,7 +114,6 @@ class Theatre:
                             "price": float(row['Price']),
                             "screen_id": row['ScreenID'],
                         }
-            print(f"Debug - Loaded {len(self.movie_list)} movies")  # Debug line
 
     def _load_screens(self):
         self.screens = {}
@@ -120,9 +128,8 @@ class Theatre:
                         rows = int(row['Rows'])
                         cols = int(row['Columns'])
                         
-                        # Load timings from the screen data (semicolon-separated)
                         timings = row.get('Timings', '').split(';') if 'Timings' in row else []
-                        if not timings and 'ShowTimes' in row:  # Backward compatibility
+                        if not timings and 'ShowTimes' in row:
                             timings = row['ShowTimes'].split(';')
                         
                         self.screens[screen_id] = {
@@ -155,6 +162,7 @@ class Theatre:
                 }
 
     def _load_booking_history(self):
+        """Load booking history from file and reconstruct all active bookings"""
         if not os.path.exists(self.login.file2):
             return
 
@@ -163,6 +171,8 @@ class Theatre:
             for row in reader:
                 if len(row) < 9:
                     continue
+                    
+                self.booking_history.append(row)
                 
                 if row.get('Ticket_Status', '').lower() != 'booked':
                     continue
@@ -170,17 +180,36 @@ class Theatre:
                 screen_id = row.get('ScreenID')
                 show_time = row.get('Show_Timing')
                 seats_str = row.get('Seat_Numbers', '[]')
+                user_id = row.get('UID')
+                movie_name = row.get('Movie_Name')
                 
                 try:
                     seats = ast.literal_eval(seats_str) if seats_str.startswith('[') else [seats_str]
                 except:
                     continue
                     
-                if screen_id not in self.hall_data or show_time not in self.hall_data[screen_id]['seating']:
+                if screen_id not in self.hall_data:
+                    screen_info = self._get_screen_info(screen_id)
+                    if screen_info:
+                        rows = int(screen_info['Rows'])
+                        cols = int(screen_info['Columns'])
+                        self._init_screen_seating(screen_id, rows, cols, [show_time])
+                    
+                if (screen_id not in self.hall_data or 
+                    show_time not in self.hall_data[screen_id]['seating']):
                     continue
                     
                 timing_data = self.hall_data[screen_id]['seating'][show_time]
                 
+                movie_id = None
+                for mid, movie in self.movie_list.items():
+                    if movie['name'] == movie_name:
+                        movie_id = mid
+                        break
+                
+                if not movie_id:
+                    continue
+                    
                 for seat in seats:
                     try:
                         row_char = seat[0].upper()
@@ -189,28 +218,46 @@ class Theatre:
                         
                         timing_data['alpha_dict'][row_char][col_index] = 'X'
                         timing_data['ticket_count'] -= 1
+                        
+                        timing_data['booked_seats'][seat] = {
+                            'user_name': row.get('UserName'),
+                            'movie_id': movie_id,
+                            'seat': seat,
+                            'show_time': show_time,
+                            'user_id': user_id,
+                            'price_paid': float(row.get('Total_Price', 0)) / len(seats),
+                            'screen_id': screen_id,
+                            'booking_date': row.get('Date')
+                        }
                     except (ValueError, IndexError):
                         continue
 
+    def _get_screen_info(self, screen_id):
+        """Get screen info from screens.csv"""
+        screens_file = 'csvs/screens.csv'
+        if os.path.exists(screens_file):
+            with open(screens_file, 'r') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if row.get('ScreenID') == screen_id:
+                        return row
+        return None
+
 
     def seats(self, screen_id, rows, cols):
-        """Initialize seating for a specific screen with dynamic timings"""
         self.available_rows = [chr(65 + i) for i in range(rows)]
         self.available_cols = [str(i) for i in range(cols)]
         
-        # Get the timings for this screen
         if screen_id not in self.hall_data:
             self.hall_data[screen_id] = {
                 'dimensions': {'rows': rows, 'cols': cols},
                 'seating': {}
             }
         
-        # Get timings from screen data (should be loaded already)
         timings = []
         if screen_id in self.screens:
             timings = self.screens[screen_id].get('timings', [])
         
-        # Initialize seating for each timing
         for time in timings:
             if time not in self.hall_data[screen_id]['seating']:
                 self.hall_data[screen_id]['seating'][time] = {
@@ -286,17 +333,14 @@ class Theatre:
 
     def book_ticket(self):
         print("\nAvailable Movies:")
-        print(f"Debug - Total movies in list: {len(self.movie_list)}")
         sorted_movies = sorted(self.movie_list.items(), key=lambda x: x[0])
         
-        # First display all movies
         for movie_id, movie_data in sorted_movies:
             if not all(key in movie_data for key in ['name', 'price', 'screen_id']):
                 print(f"Warning: Skipping invalid movie entry (ID: {movie_id})")
                 continue
             print(f"{movie_id}. {movie_data['name']} ₹{movie_data['price']} (Screen: {movie_data['screen_id']})")
 
-        # Then get user input
         while True:
             try:
                 movie_id = int(input("Enter the serial number of the movie: "))
@@ -307,7 +351,6 @@ class Theatre:
             except ValueError:
                 print("Please enter a number only.")
         
-        # Rest of the method remains the same...
         movie_data = self.movie_list[movie_id]
         screen_id = movie_data['screen_id']
 
@@ -502,143 +545,191 @@ class Theatre:
                 print("Please enter 'y' or 'n'")
 
 
-    def cancel_ticket(self):        
-        user_tickets = []
-
+    def cancel_ticket(self):
+        user_bookings = []
+        
         for screen_id, screen_data in self.hall_data.items():
             for show_time, timing_data in screen_data['seating'].items():
                 for seat, details in timing_data['booked_seats'].items():
-                    if isinstance(details, dict) and details.get('user_id') == self.login.current_user:
+                    if (isinstance(details, dict) and 
+                        details.get('user_id') == self.login.current_user):
+                        
                         movie_id = details.get('movie_id')
                         if movie_id in self.movie_list:
-                            user_tickets.append({
+                            user_bookings.append({
                                 'screen_id': screen_id,
                                 'movie_id': movie_id,
                                 'movie': self.movie_list[movie_id]['name'],
                                 'show_time': show_time,
                                 'seat': seat,
                                 'details': details,
-                                'price_paid': details.get('price_paid', self.movie_list[movie_id]['price'])
+                                'price_paid': details.get('price_paid', 0),
+                                'booking_date': details.get('booking_date', 'Unknown')
                             })
 
-        if not user_tickets:
+        if not user_bookings:
             print("\nYou have no active bookings to cancel.")
             return
 
-        print("\nYour Bookings:")
-        print("-"*70)
-        print(f"{'#':<3} | {'Movie':<20} | {'Screen':<6} | {'Time':<8} | {'Seat':<6} | {'Price':<8}")
-        print("-"*70)
-        for i, ticket in enumerate(user_tickets, 1):
-            print(f"{i:<3} | {ticket['movie'][:19]:<20} | {ticket['screen_id']:<6} | "
-                f"{ticket['show_time']:<8} | {ticket['seat']:<6} | ₹{ticket['price_paid']:<7}")
+        user_bookings.sort(key=lambda x: x.get('booking_date', ''), reverse=True)
+
+        print("\nYour Active Bookings:")
+        print("=" * 90)
+        print(f"{'#':<3} | {'Movie':<25} | {'Screen':<8} | {'Date':<12} | {'Time':<8} | {'Seat':<6} | {'Price':<10}")
+        print("-" * 90)
+        
+        for i, booking in enumerate(user_bookings, 1):
+            print(f"{i:<3} | {booking['movie'][:24]:<25} | {booking['screen_id']:<8} | "
+                f"{booking['booking_date']:<12} | {booking['show_time']:<8} | "
+                f"{booking['seat']:<6} | ₹{booking['price_paid']:<9.2f}")
 
         try:
-            choice = input("\nEnter ticket number to cancel (0 to return): ").strip()
+            choice = input("\nEnter booking number to cancel (0 to return): ").strip()
             if choice == '0':
                 return
                 
             choice = int(choice)
-            if not 1 <= choice <= len(user_tickets):
-                print("Invalid selection. Please enter a valid ticket number.")
+            if not 1 <= choice <= len(user_bookings):
+                print("Invalid selection. Please enter a valid number.")
                 return
                 
-            selected = user_tickets[choice-1]
-            movie_id = selected['movie_id']
-            show_time = selected['show_time']
-            seat = selected['seat']
-            screen_id = selected['screen_id']
-            movie_name = selected['movie']
-            details = selected['details']
-            refund_amount = selected['price_paid']
-
-            confirm = input(f"\nConfirm cancel seat {seat} for {movie_name} at {show_time}? (y/n): ").lower()
-            if confirm != 'y':
-                print("Cancellation aborted.")
-                return
-
-            timing_data = self.hall_data[screen_id]['seating'][show_time]
-            available_cols = timing_data['available_cols']
-            
-            row_char = seat[0].upper()
-            col_str = seat[1:]
-            
-            try:
-                col_index = available_cols.index(col_str) 
-                
-                timing_data['alpha_dict'][row_char][col_index] = 0
-                timing_data['ticket_count'] += 1
-                timing_data['booked_seats'].pop(seat, None)
-
-                new_balance = self.login.add_to_wallet(self.login.current_user, refund_amount)
-                
-                self.update_booking_csv(
-                    name=details.get('user_name', self.login.current_user),
-                    uid=self.login.current_user,
-                    show_time=show_time,
-                    seats=[seat],
-                    movie_id=movie_id,
-                    status='cancelled',
-                    total_price=-refund_amount
-                )
-
-                self.save_hall_data()
-
-                print("\n" + "="*50)
-                print("CANCELLATION SUCCESSFUL".center(50))
-                print("="*50)
-                print(f"{'Movie:':<15} {movie_name}")
-                print(f"{'Screen:':<15} {screen_id}")
-                print(f"{'Time:':<15} {show_time}")
-                print(f"{'Seat:':<15} {seat}")
-                print(f"{'Refund Amount:':<15} ₹{refund_amount}")
-                print(f"{'New Balance:':<15} ₹{new_balance}")
-                print("="*50)
-
-            except ValueError as e:
-                print(f"\nError processing seat {seat}: {str(e)}")
-                print("Please contact support for assistance.")
+            selected = user_bookings[choice-1]
+            self._process_cancellation(selected)
 
         except ValueError:
             print("Invalid input. Please enter a number.")
 
+    def _process_cancellation(self, booking):
+        """Handle the actual cancellation process"""
+        screen_id = booking['screen_id']
+        show_time = booking['show_time']
+        seat = booking['seat']
+        movie_name = booking['movie']
+        details = booking['details']
+        refund_amount = booking['price_paid']
+
+        confirm = input(f"\nConfirm cancellation of seat {seat} for {movie_name} at {show_time}? (y/n): ").lower()
+        if confirm != 'y':
+            print("Cancellation aborted.")
+            return
+
+        timing_data = self.hall_data[screen_id]['seating'][show_time]
+        
+        try:
+            row_char = seat[0].upper()
+            col_str = seat[1:]
+            col_index = timing_data['available_cols'].index(col_str)
+            
+            timing_data['alpha_dict'][row_char][col_index] = 0
+            timing_data['ticket_count'] += 1
+            timing_data['booked_seats'].pop(seat, None)
+
+            new_balance = self.login.add_to_wallet(
+                self.login.current_user,
+                refund_amount,
+                description="Cancelled"
+            )
+            
+            self.update_booking_csv(
+                name=details.get('user_name', self.login.current_user),
+                uid=self.login.current_user,
+                show_time=show_time,
+                seats=[seat],
+                movie_id=booking['movie_id'],
+                status='cancelled',
+                total_price=-refund_amount
+            )
+
+            self.save_hall_data()
+
+            print("\n" + "="*60)
+            print("CANCELLATION COMPLETED".center(60))
+            print("="*60)
+            print(f"{'Movie:':<15} {movie_name}")
+            print(f"{'Screen:':<15} {screen_id}")
+            print(f"{'Show Time:':<15} {show_time}")
+            print(f"{'Seat:':<15} {seat}")
+            print(f"{'Refund Amount:':<15} ₹{refund_amount:.2f}")
+            print(f"{'New Balance:':<15} ₹{new_balance:.2f}")
+            print("="*60)
+
         except Exception as e:
-            print(f"\nError cancelling ticket: {str(e)}")
+            print(f"\nError during cancellation: {str(e)}")
             print("Please contact support for assistance.")
 
 
     def check_remaining_seats(self):
-        print("\n" + "="*60)
-        print("AVAILABLE SEATS".center(60))
-        print("="*60)
+        seats_data = []
+        
+        print("\n" + "="*75)
+        print("AVAILABLE SEATS".center(75))
+        print("="*75)
         print(f"{'Screen':<8} | {'Movie':<25} | {'Time':<8} | {'Available':<10} | {'Capacity':<10}")
-        print("-"*60)
+        print("-"*75)
         
-        screen_ids = sorted(
-            [sid for sid in self.hall_data.keys() if sid.startswith('SC')],
-            key=lambda x: int(x[2:]) if x[2:].isdigit() else 0
-        )
-        
-        for screen_id in screen_ids:
-            screen_data = self.hall_data[screen_id]
-            rows = screen_data['dimensions']['rows']
-            cols = screen_data['dimensions']['cols']
-            total_capacity = rows * cols
+        try:
+            self._load_hall_data()
             
-            screen_movies = {
-                mid: data for mid, data in self.movie_list.items() 
-                if data.get('screen_id') == screen_id
-            }
-            
-            for movie_id, movie_data in screen_movies.items():
-                movie_name = movie_data['name']
-                
-                for show_time in self.hall_data[screen_id]['seating'].keys():
-                    available_seats = screen_data['seating'][show_time]['ticket_count']
+            for screen_id in sorted(self.hall_data.keys()):
+                if not screen_id.startswith('SC'):
+                    continue
                     
-                    print(f"{screen_id:<8} | {movie_name[:24]:<25} | {show_time:<8} | {available_seats:<10} | {total_capacity:<10}")
+                screen_info = self.hall_data[screen_id]
+                rows = screen_info['dimensions']['rows']
+                cols = screen_info['dimensions']['cols']
+                total_capacity = rows * cols
+                
+                current_movies = [
+                    movie for movie in self.movie_list.values() 
+                    if movie['screen_id'] == screen_id
+                ]
+                
+                for show_time, timing_data in screen_info['seating'].items():
+                    available_seats = 0
+                    for row in timing_data['alpha_dict'].values():
+                        available_seats += row.count(0)
+                    
+                    timing_data['ticket_count'] = available_seats
+                    
+                    movie_name = "No movie assigned"
+                    for movie in current_movies:
+                        movie_name = movie['name']
+                        break
+                        
+                    seats_data.append({
+                        'screen_id': screen_id,
+                        'movie': movie_name,
+                        'show_time': show_time,
+                        'available_seats': available_seats,
+                        'total_capacity': total_capacity,
+                        'seat_map': timing_data['alpha_dict']
+                    })
+                    
+                    print(f"{screen_id:<8} | {movie_name[:24]:<25} | {show_time:<8} | "
+                        f"{available_seats:<10} | {total_capacity:<10}")
+            
+            print("="*75)
+            return seats_data
+            
+        except Exception as e:
+            print(f"\nError checking seat availability: {str(e)}")
+            return []
+
+    def _print_seats_info(self, seats_info):
+        """Helper method to print seats information in a formatted table"""
+        print("\n" + "="*75)
+        print("AVAILABLE SEATS".center(75))
+        print("="*75)
+        print(f"{'Screen':<8} | {'Movie':<25} | {'Time':<8} | {'Available':<10} | {'Capacity':<10}")
+        print("-"*75)
         
-        print("="*60)
+        for info in seats_info:
+            print(f"{info['screen_id']:<8} | {info['movie_name'][:24]:<25} | "
+                f"{info['show_time']:<8} | {info['available_seats']:<10} | "
+                f"{info['total_capacity']:<10}")
+        
+        print("="*75)
+        
 
 
     def get_movie_timing(self, screen_id):
@@ -697,7 +788,7 @@ class Theatre:
             
 
     def view_history(self):
-        """Display booking history with enhanced formatting and details"""
+        """Display booking history with enhanced formatting based on the actual CSV structure"""
         try:
             if not os.path.exists(self.login.file2):
                 print("\n" + "="*60)
@@ -705,9 +796,9 @@ class Theatre:
                 print("="*60)
                 return
             
-            print("\n" + "="*90)
-            print(f"BOOKING HISTORY FOR: {self.login.current_user}".center(90))
-            print("="*90)
+            print("\n" + "="*100)
+            print(f"BOOKING HISTORY FOR: {self.login.current_user}".center(100))
+            print("="*100)
             
             with open(self.login.file2, 'r') as f:
                 reader = csv.DictReader(f)
@@ -715,62 +806,99 @@ class Theatre:
                     print("\nNo valid booking records found.")
                     return
                     
-                date_field = 'Date' if 'Date' in reader.fieldnames else None
-                movie_field = 'Movie_Name' if 'Movie_Name' in reader.fieldnames else 'Movie'
-                show_field = 'Show_Timing' if 'Show_Timing' in reader.fieldnames else 'Show'
-                seats_field = 'Seat_Numbers' if 'Seat_Numbers' in reader.fieldnames else 'Seats'
-                price_field = 'Total_Price' if 'Total_Price' in reader.fieldnames else 'Price'
-                status_field = 'Ticket_Status' if 'Ticket_Status' in reader.fieldnames else 'Status'
-                screen_field = 'ScreenID' if 'ScreenID' in reader.fieldnames else None
-                uid_field = 'UID' if 'UID' in reader.fieldnames else None
+                fields = {
+                    'date': 'DATE',
+                    'name': 'NAME',
+                    'uid': 'UID',
+                    'screen': 'SCREEN_ID',
+                    'time': 'MOVIE_TIME',
+                    'seats': 'SEAT_NUMBER(s)',
+                    'movie': 'MOVIE_NAME',
+                    'price': 'TIKCET_PRICE',
+                    'status': 'TICKET_STATUS'
+                }
                 
                 found = False
                 
-                print(f"\n{'Date':<12} | {'Action':<8} | {'Movie':<20} | {'Screen':<6} | {'Time':<8} | "
-                    f"{'Seats':<12} | {'Amount':<10} | {'Status'}")
-                print("-"*90)
+                print(f"\n{'Date':<12} | {'Movie':<20} | {'Screen':<8} | {'Time':<8} | "
+                    f"{'Seats':<15} | {'Price':<10} | {'Status':<10}")
+                print("-"*100)
                 
                 for row in reader:
-                    if uid_field and row.get(uid_field) != self.login.current_user:
+                    if row.get(fields['uid']) != self.login.current_user:
                         continue
                         
-                    date = row.get(date_field, 'Unknown')
-                    movie = row.get(movie_field, 'Unknown')[:19]
-                    show_time = row.get(show_field, 'Unknown')
-                    seats = row.get(seats_field, 'N/A')
-                    if seats.startswith('[') and seats.endswith(']'):
-                        try:
-                            seats = ', '.join(ast.literal_eval(seats))
-                        except:
-                            pass
-                    price = float(row.get(price_field, 0)) if row.get(price_field, '').replace('.','',1).isdigit() else 0
-                    status = row.get(status_field, 'Unknown')
-                    screen = row.get(screen_field, 'N/A')
+                    date = row.get(fields['date'], 'Unknown')
+                    movie = row.get(fields['movie'], 'Unknown')[:19]
+                    screen = row.get(fields['screen'], 'Unknown')
+                    time = row.get(fields['time'], 'Unknown')
                     
-                    action = "Booked" if status.lower() == "booked" else "Cancelled"
-                    amount_display = f"₹{abs(price):.2f}"
+                    seats_str = row.get(fields['seats'], '[]')
+                    try:
+                        seats = ast.literal_eval(seats_str) if seats_str.startswith('[') else [seats_str]
+                        seats_display = ', '.join(seats) if isinstance(seats, list) else seats_str
+                    except:
+                        seats_display = seats_str
                     
-                    if status.lower() == "cancelled":
-                        amount_display = f"(Refund) ₹{abs(price):.2f}"
+                    price_str = row.get(fields['price'], '0')
+                    try:
+                        price = float(price_str) if price_str.replace('.','',1).isdigit() else 0
+                    except:
+                        price = 0
                     
-                    print(f"{date:<12} | {action:<8} | {movie:<20} | {screen:<6} | {show_time:<8} | "
-                        f"{str(seats):<12} | {amount_display:<10} | {status.capitalize()}")
+                    status = row.get(fields['status'], 'Unknown').capitalize()
+                    
+                    print(f"{date:<12} | {movie:<20} | {screen:<8} | {time:<8} | "
+                        f"{seats_display:<15} | ₹{price:<8.2f} | {status:<10}")
                     found = True
                     
                 if not found:
                     print("\nNo booking history found for this user.")
                     
-            print("\n" + "="*90)
-            print("End of History".center(90))
-            print("="*90)
             
         except Exception as e:
             print(f"\nError viewing history: {str(e)}")
             print("Please contact support if this error persists.")
 
+    def _process_booking_row(self, row):
+        seats = row.get('Seat_Numbers', 'N/A')
+        if seats.startswith('[') and seats.endswith(']'):
+            try:
+                seats = ', '.join(ast.literal_eval(seats))
+            except:
+                pass
+        
+        return {
+            'date': row.get('Date', 'Unknown'),
+            'movie': row.get('Movie_Name', 'Unknown'),
+            'screen': row.get('ScreenID', 'N/A'),
+            'time': row.get('Show_Timing', 'Unknown'),
+            'seats': seats,
+            'price': float(row.get('Total_Price', 0)) if str(row.get('Total_Price', '0')).replace('.','',1).isdigit() else 0,
+            'status': row.get('Ticket_Status', 'Unknown'),
+            'original_row': row
+        }
+
+    def _print_no_history_message(self):
+        print("\n" + "="*60)
+        print("No booking history available yet.".center(60))
+        print("="*60)
+
+    def _print_history_header(self):
+        print("\n" + "="*100)
+        print(f"{'BOOKING HISTORY':^100}")
+        print("="*100)
+        print(f"{'Date':<12} | {'Action':<8} | {'Movie':<20} | {'Screen':<6} | {'Time':<8} | "
+            f"{'Seats':<12} | {'Amount':<10} | {'Status'}")
+        print("-"*100)
+
+    def _print_history_footer(self):
+        print("="*100)
+        print("End of History".center(100))
+        print("="*100)
+
 
     def record_wallet_transaction(self, username, amount, description=""):
-        """Record a wallet transaction with timestamp"""
         try:
             now = datetime.now()
             with open(self.wallet_history_file, 'a', newline='') as f:
@@ -786,7 +914,6 @@ class Theatre:
             print(f"Error recording wallet transaction: {e}")
 
     def view_wallet_history(self):
-        """Wrapper to call login's wallet history"""
         self.login.get_wallet_history(self.login.current_user)
     
     def _validate_time_format(self, time_str):

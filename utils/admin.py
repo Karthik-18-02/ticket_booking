@@ -48,7 +48,6 @@ class Admin:
                 with open(screens_file, 'w', newline='') as f:
                     writer = csv.writer(f)
                     writer.writerow(['ScreenID', 'Rows', 'Columns', 'LastMaintenance', 'Status', 'Timings'])
-                    # Add default timings for initial screen
                     writer.writerow(['SC1', 10, 10, datetime.now().strftime('%Y-%m-%d'), 'Active', '09:30;12:30;16:00;19:30;23:30'])
         
         except Exception as e:
@@ -63,7 +62,7 @@ class Admin:
     def _validate_time_format(self, time_str):
         try:
             time_obj = datetime.strptime(time_str, '%H:%M')
-            return time_obj.strftime('%H:%M')  # Return normalized format
+            return time_obj.strftime('%H:%M')
         except ValueError:
             return False
 
@@ -87,7 +86,7 @@ class Admin:
         while True:
             timing = input(f"Enter timing {len(show_timings)+1} (or press Enter to finish): ").strip()
             
-            if not timing:  # Empty input means done
+            if not timing:
                 if len(show_timings) == 0:
                     print("At least one show timing is required!")
                     continue
@@ -103,7 +102,6 @@ class Admin:
                 
             new_time = datetime.strptime(timing, '%H:%M')
             
-            # Check if new time is after all existing times
             if show_timings:
                 last_time = datetime.strptime(show_timings[-1], '%H:%M')
                 if new_time <= last_time:
@@ -112,7 +110,6 @@ class Admin:
             
             show_timings.append(timing)
         
-        # Convert timings to semicolon-separated string for CSV storage
         timings_str = ';'.join(show_timings)
         
         with open(self.screens_file, 'a', newline='') as f:
@@ -123,10 +120,9 @@ class Admin:
                 cols,
                 datetime.now().strftime('%Y-%m-%d'),
                 'Active',
-                timings_str  # Store timings as semicolon-separated string
+                timings_str
             ])
         
-        # Initialize seating for this screen with dynamic timings
         self._init_screen_seating(screen_id, rows, cols, show_timings)
         
         print(f"\nScreen {screen_id} added successfully with {rows}x{cols} seating")
@@ -337,7 +333,6 @@ class Admin:
     def screen_maintenance(self):
         self.view_screens()
         
-        # Get list of available screen IDs
         available_screens = []
         if os.path.exists(self.screens_file):
             with open(self.screens_file, 'r') as f:
@@ -368,7 +363,6 @@ class Admin:
             fieldnames = reader.fieldnames
             for screen in reader:
                 if screen['ScreenID'] == screen_id:
-                    # Toggle between Active and Maintenance
                     if screen['Status'].lower() == 'active':
                         screen['Status'] = 'Maintenance'
                         screen['LastMaintenance'] = datetime.now().strftime('%Y-%m-%d')

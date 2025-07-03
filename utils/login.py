@@ -83,9 +83,7 @@ class Login:
                             self.user_wallets[username] = 1000
 
     def add_to_wallet(self, username, amount, description=""):
-        """Add or deduct money from wallet and record transaction history"""
         try:
-            # Validate username first
             if not username or not self.is_validate_mobile_number(username):
                 print("Invalid username/mobile number")
                 return self.check_balance(username)
