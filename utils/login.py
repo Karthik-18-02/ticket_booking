@@ -30,16 +30,13 @@ class Login:
         headers = ['Date', 'Time', 'Username', 'Amount', 'Balance', 'Description']
         
         try:
-            # Check if file exists and has correct headers
             if os.path.exists(self.wallet_history_file):
                 with open(self.wallet_history_file, 'r') as f:
                     first_line = f.readline().strip()
                 
-                # If headers don't match, create backup
                 if first_line != ','.join(headers):
                     try:
                         backup_name = f"{self.wallet_history_file}.bak"
-                        # Ensure all file handles are closed before renaming
                         if os.path.exists(backup_name):
                             os.remove(backup_name)
                         os.rename(self.wallet_history_file, backup_name)
@@ -47,7 +44,6 @@ class Login:
                     except PermissionError:
                         print("Warning: Could not create backup - file may be locked by another process")
         
-            # Write new file if it doesn't exist or was backed up
             if not os.path.exists(self.wallet_history_file):
                 with open(self.wallet_history_file, 'w', newline='') as f:
                     writer = csv.writer(f)
@@ -97,21 +93,17 @@ class Login:
             current_balance = self.check_balance(username)
             new_balance = current_balance + amount
             
-            # Update in-memory balance
             self.user_wallets[username] = new_balance
             
-            # Update wallet file
             wallet_file = 'csvs/user_wallets.csv'
             wallet_data = []
             fieldnames = ['Username', 'WalletBalance']
             
-            # Read existing data
             if os.path.exists(wallet_file):
                 with open(wallet_file, 'r') as f:
                     reader = csv.DictReader(f)
-                    wallet_data = [row for row in reader if row.get('Username')]  # Skip empty rows
+                    wallet_data = [row for row in reader if row.get('Username')]
             
-            # Find and update user's record
             user_found = False
             for record in wallet_data:
                 if record['Username'] == username:
@@ -119,24 +111,20 @@ class Login:
                     user_found = True
                     break
             
-            # If not found, add new record
             if not user_found:
                 wallet_data.append({'Username': username, 'WalletBalance': str(new_balance)})
             
-            # Write back to file - ensuring proper formatting
             with open(wallet_file, 'w', newline='') as f:
                 writer = csv.DictWriter(f, fieldnames=fieldnames)
                 writer.writeheader()
-                # Write all records, ensuring username is included
                 for record in wallet_data:
                     if not record.get('Username'):
-                        continue  # Skip any records without username
+                        continue
                     writer.writerow({
                         'Username': record['Username'],
                         'WalletBalance': record['WalletBalance']
                     })
             
-            # Rest of your transaction recording code...
             now = datetime.now()
             transaction = {
                 'Date': now.strftime('%Y-%m-%d'),
@@ -186,7 +174,6 @@ class Login:
                         }
                         for row in reader if row.get('Username') == username
                     ]
-                    # Sort by date and time (newest first)
                     transactions.sort(key=lambda x: (x['date'], x['time']), reverse=True)
             
             if not transactions:
@@ -211,11 +198,9 @@ class Login:
 
     def check_balance(self, username):
         try:
-            # First check in-memory balance
             # if username in self.user_wallets:
             #     return self.user_wallets[username]
             
-            # Then check wallet file
             wallet_file = 'csvs/user_wallets.csv'
             if os.path.exists(wallet_file):
                 with open(wallet_file, 'r') as f:
@@ -229,7 +214,6 @@ class Login:
                             except (ValueError, KeyError):
                                 continue
             
-            # Default balance for new users
             self.user_wallets[username] = 1000
             return 1000
             
@@ -335,7 +319,6 @@ class Login:
                 for i in range(3, 0, -1):
                     password = input("Enter your password: ")
                     if user[1] == password:
-                        # Get user's name from booking history if available
                         user_name = self._get_user_name(username)
                         if user_name:
                             print(f"\nWelcome back, {user_name}!")
