@@ -713,6 +713,129 @@ class Theatre:
                 os.remove(temp_file)
 
 
+    def view_ticket_details(self):
+        """Display booked tickets in serialized order with detailed view option"""
+        try:
+            user_file = f'csvs/bookings/{self.login.current_user}_bookings.csv'
+            
+            if not os.path.exists(user_file):
+                print("\nNo booked tickets found.")
+                return
+                
+            # Load active bookings
+            bookings = []
+            with open(user_file, 'r') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if row['Ticket_Status'].lower() == 'booked':
+                        try:
+                            bookings.append({
+                                'booking_id': row['BookingID'],
+                                'date': row['Date'],
+                                'time': row['Time'],
+                                'movie': row['Movie_Name'],
+                                'screen': row['ScreenID'],
+                                'show_time': row['Show_Timing'],
+                                'seats': ast.literal_eval(row['Seat_Numbers']) if row['Seat_Numbers'].startswith('[') else [row['Seat_Numbers']],
+                                'price': float(row['Total_Price']),
+                                'movie_id': row['Movie_ID']
+                            })
+                        except Exception as e:
+                            print(f"Error processing booking {row.get('BookingID', 'unknown')}: {str(e)}")
+                            continue
+
+            if not bookings:
+                print("\nNo active bookings found.")
+                return
+
+            # Sort by booking date (newest first)
+            bookings.sort(key=lambda x: (x['date'], x['time']), reverse=True)
+
+            # Display summary list
+            print("\n" + "="*120)
+            print(f"YOUR BOOKED TICKETS".center(120))
+            print("="*120)
+            print(f"{'#':<3} | {'Booking ID':<12} | {'Movie':<25} | {'Screen':<8} | {'Date':<12} | {'Time':<8} | "
+                f"{'Seats':<20} | {'Price':<10}")
+            print("-"*120)
+            
+            for i, booking in enumerate(bookings, 1):
+                seats_str = ', '.join(booking['seats'][:3])
+                if len(booking['seats']) > 3:
+                    seats_str += f" (+{len(booking['seats'])-3} more)"
+                    
+                print(f"{i:<3} | {booking['booking_id'][:12]:<12} | {booking['movie'][:24]:<25} | "
+                    f"{booking['screen']:<8} | {booking['date']:<12} | {booking['show_time']:<8} | "
+                    f"{seats_str:<20} | ₹{booking['price']:<9.2f}")
+
+            # Option to view details
+            while True:
+                try:
+                    choice = input("\nEnter ticket number to view details (0 to return): ").strip()
+                    if choice == '0':
+                        return
+                        
+                    choice = int(choice)
+                    if not 1 <= choice <= len(bookings):
+                        print("Invalid selection. Please enter a valid number.")
+                        continue
+                        
+                    selected = bookings[choice-1]
+                    self._display_ticket_details(selected)
+                    break
+                    
+                except ValueError:
+                    print("Invalid input. Please enter a number.")
+
+        except Exception as e:
+            print(f"\nError viewing ticket details: {str(e)}")
+
+
+    def _display_ticket_details(self, booking):
+        """Display detailed information for a specific booking"""
+        movie_data = self.movie_list.get(int(booking['movie_id']), {})
+        
+        print("\n" + "="*60)
+        print("TICKET DETAILS".center(60))
+        print("="*60)
+        print(f"{'Booking ID:':<15} {booking['booking_id']}")
+        print(f"{'Movie:':<15} {booking['movie']}")
+        print(f"{'Screen:':<15} {booking['screen']}")
+        print(f"{'Show Date:':<15} {booking['date']}")
+        print(f"{'Show Time:':<15} {booking['show_time']}")
+        print(f"{'Booked On:':<15} {booking['date']} at {booking['time']}")
+        print(f"{'Seats:':<15} {', '.join(booking['seats'])}")
+        print(f"{'Total Price:':<15} ₹{booking['price']:.2f}")
+        
+        if 'screen' in booking and 'show_time' in booking:
+            screen_id = booking['screen']
+            show_time = booking['show_time']
+            
+            if screen_id in self.hall_data and show_time in self.hall_data[screen_id]['seating']:
+                print("\nSeat Map:")
+                timing_data = self.hall_data[screen_id]['seating'][show_time]
+                print("   ", " ".join(f"{col:>2}" for col in timing_data['available_cols']))
+                
+                # Get user's booked seats for this show
+                user_seats = set(booking['seats'])
+                
+                for row_label in timing_data['available_rows']:
+                    seats = timing_data['alpha_dict'][row_label]
+                    seat_display = []
+                    for col_idx, seat in enumerate(seats):
+                        seat_pos = f"{row_label}{timing_data['available_cols'][col_idx]}"
+                        if seat_pos in user_seats:
+                            seat_display.append(' O')
+                        elif seat == 'X':
+                            seat_display.append(' X')
+                        else:
+                            seat_display.append(' .')
+                    print(f"{row_label}:", " ".join(seat_display))
+        
+        print("="*60)
+        input("\nPress Enter to return to the menu...")
+
+
     def check_remaining_seats(self):
         seats_data = []
         
@@ -960,9 +1083,10 @@ class Theatre:
             print("6. Add Money to Wallet")
             print("7. View Wallet History")
             print("8. View User History")
-            print("9. Exit")
+            print("9. View Ticket Details")
+            print("10. Exit")
 
-            choice = input("Enter your choice (1-9): ")
+            choice = input("Enter your choice (1-10): ")
 
             if choice == '1':
                 self.book_ticket()
@@ -996,8 +1120,10 @@ class Theatre:
                 self.view_wallet_history()
             elif choice == '8':  
                 self.view_history()
-            elif choice == '9':
+            elif choice == '9':  
+                self.view_ticket_details() 
+            elif choice == '10':
                 print("Exiting the system. Thank you!")
                 return
             else:
-                print("Invalid choice. Please enter a number between 1 and 9.")
+                print("Invalid choice. Please enter a number between 1 and 10.")
