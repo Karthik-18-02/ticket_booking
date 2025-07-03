@@ -284,25 +284,76 @@ class Admin:
         print("\n--- Remove Movie ---")
         self.list_movies()
         
-        movie_id = int(input("Enter Movie ID to remove: "))
-        
-        movies = []
-        with open(self.movies_file, 'r') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                if int(row['MovieID']) == movie_id:
-                    row['IsActive'] = 'No'
-                movies.append(row)
-        
-        with open(self.movies_file, 'w', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=reader.fieldnames)
-            writer.writeheader()
-            writer.writerows(movies)
-        
-        if movie_id in self.theatre.movie_list:
-            del self.theatre.movie_list[movie_id]
-        
-        print(f"Movie ID {movie_id} has been deactivated.")
+        try:
+            movie_id = int(input("Enter Movie ID to remove (or 0 to cancel): "))
+            if movie_id == 0:
+                print("Operation cancelled.")
+                return
+                
+            movie_exists = False
+            movie_active = False
+            screen_id = None
+            
+            with open(self.movies_file, 'r') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if int(row['MovieID']) == movie_id:
+                        movie_exists = True
+                        if row.get('IsActive', '').lower() == 'yes':
+                            movie_active = True
+                            screen_id = row['ScreenID']
+                        break
+            
+            if not movie_exists:
+                print(f"Error: Movie ID {movie_id} not found.")
+                return
+                
+            if not movie_active:
+                print(f"Error: Movie ID {movie_id} is already inactive.")
+                return
+                
+            screen_active = False
+            with open(self.screens_file, 'r') as f:
+                screen_reader = csv.DictReader(f)
+                for screen in screen_reader:
+                    if screen['ScreenID'] == screen_id and screen.get('Status', '').lower() == 'active':
+                        screen_active = True
+                        break
+            
+            if not screen_active:
+                print(f"Error: Screen {screen_id} for this movie is not active.")
+                return
+                
+            confirm = input(f"Are you sure you want to deactivate Movie ID {movie_id}? (y/n): ").lower()
+            if confirm != 'y':
+                print("Operation cancelled.")
+                return
+                
+            movies = []
+            with open(self.movies_file, 'r') as f:
+                reader = csv.DictReader(f)
+                fieldnames = reader.fieldnames
+                for row in reader:
+                    if int(row['MovieID']) == movie_id:
+                        row['IsActive'] = 'No'
+                        print(f"Deactivating: {row['Title']} (Screen: {row['ScreenID']})")
+                    movies.append(row)
+            
+            with open(self.movies_file, 'w', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(movies)
+            
+            if movie_id in self.theatre.movie_list:
+                del self.theatre.movie_list[movie_id]
+                print(f"Movie ID {movie_id} has been deactivated from memory.")
+            else:
+                print(f"Note: Movie ID {movie_id} was not found in the current session's active movies.")
+                
+        except ValueError:
+            print("Invalid input. Please enter a numeric Movie ID.")
+        except Exception as e:
+            print(f"An error occurred: {str(e)}")
 
     def list_movies(self):
         print("\n--- Current Movies ---")

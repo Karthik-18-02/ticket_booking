@@ -1,0 +1,2 @@
+BookingID,Date,Time,UserName,UID,ScreenID,Show_Timing,Seat_Numbers,Movie_Name,Movie_ID,Total_Price,Ticket_Status,Cancellation_Date
+84bbca31-ba2e-45e6-880c-2f2336961084,2025-07-03,17:59:42,Venky,9440510262,SC2,10:30,"['A0', 'A1', 'A2', 'A3', 'A4']",Number 1,8,1500.0,booked,

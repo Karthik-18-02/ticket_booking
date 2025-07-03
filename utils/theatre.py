@@ -2,6 +2,7 @@ from datetime import datetime
 import csv
 import os
 import ast
+import uuid
 
 class Theatre:
 
@@ -19,10 +20,10 @@ class Theatre:
         self._init_seat_tracker()
         self.wallet_history_file = 'csvs/wallet_history.csv'
         self._init_wallet_history_file()
+        self.booking_fields = ['BookingID','Date','Time','UserName','UID','ScreenID','Show_Timing','Seat_Numbers','Movie_Name','Movie_ID','Total_Price','Ticket_Status','Cancellation_Date']
 
 
     def _init_wallet_history_file(self):
-        """Initialize wallet history file with headers if it doesn't exist"""
         if not os.path.exists(self.wallet_history_file):
             with open(self.wallet_history_file, 'w', newline='') as f:
                 writer = csv.writer(f)
@@ -30,7 +31,6 @@ class Theatre:
 
 
     def _init_seat_tracker(self):
-        """Initialize seat availability tracker"""
         for screen_id, screen_data in self.hall_data.items():
             for show_time in self.hall_data[screen_id]['seating'].keys():
                 key = (screen_id, show_time)
@@ -303,30 +303,45 @@ class Theatre:
     def update_booking_csv(self, name, uid, show_time, seats, movie_id, status, total_price=None):
         try:
             movie_name = self.movie_list[movie_id]['name']
-            screen_id = self.movie_list[movie_id].get('screen_id', 'SC1')
+            screen_id = self.movie_list[movie_id]['screen_id']
             
             booking_record = {
+                'BookingID': str(uuid.uuid4()),
                 'Date': datetime.today().strftime('%Y-%m-%d'),
+                'Time': datetime.today().strftime('%H:%M:%S'),
                 'UserName': name,
                 'UID': uid,
                 'ScreenID': screen_id,
                 'Show_Timing': show_time,
                 'Seat_Numbers': str(seats),
                 'Movie_Name': movie_name,
-                'Total_Price': round(total_price, 2),
-                'Ticket_Status': status
+                'Movie_ID': movie_id,
+                'Total_Price': total_price,
+                'Ticket_Status': status,
+                'Cancellation_Date': '' if status.lower() != 'cancelled' else datetime.today().strftime('%Y-%m-%d')
             }
 
-            file_exists = os.path.exists(self.login.file2)
-            
-            with open(self.login.file2, 'a', newline='') as f:
-                writer = csv.DictWriter(f, fieldnames=booking_record.keys())
+            # Save to user's booking file
+            user_file = f'csvs/bookings/{uid}_bookings.csv'
+            os.makedirs('csvs/bookings', exist_ok=True)
+            file_exists = os.path.exists(user_file)
+            with open(user_file, 'a', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=self.booking_fields)
                 if not file_exists or f.tell() == 0:
                     writer.writeheader()
                 writer.writerow(booking_record)
-            
+
+            # Save to main bookings file
+            main_file = self.login.file2
+            file_exists = os.path.exists(main_file)
+            with open(main_file, 'a', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=self.booking_fields)
+                if not file_exists or f.tell() == 0:
+                    writer.writeheader()
+                writer.writerow(booking_record)
+
             self.booking_history.append(booking_record)
-            
+
         except Exception as e:
             print(f"Error updating booking records: {str(e)}")
             raise
@@ -547,41 +562,53 @@ class Theatre:
 
     def cancel_ticket(self):
         user_bookings = []
+        user_file = f'csvs/bookings/{self.login.current_user}_bookings.csv'
         
-        for screen_id, screen_data in self.hall_data.items():
-            for show_time, timing_data in screen_data['seating'].items():
-                for seat, details in timing_data['booked_seats'].items():
-                    if (isinstance(details, dict) and 
-                        details.get('user_id') == self.login.current_user):
-                        
-                        movie_id = details.get('movie_id')
-                        if movie_id in self.movie_list:
-                            user_bookings.append({
-                                'screen_id': screen_id,
-                                'movie_id': movie_id,
-                                'movie': self.movie_list[movie_id]['name'],
-                                'show_time': show_time,
-                                'seat': seat,
-                                'details': details,
-                                'price_paid': details.get('price_paid', 0),
-                                'booking_date': details.get('booking_date', 'Unknown')
-                            })
+        if not os.path.exists(user_file):
+            print("\nYou have no active bookings to cancel.")
+            return
+        
+        # Load active bookings
+        with open(user_file, 'r') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row['Ticket_Status'].lower() == 'booked':
+                    try:
+                        seats = ast.literal_eval(row['Seat_Numbers']) if row['Seat_Numbers'].startswith('[') else [row['Seat_Numbers']]
+                        user_bookings.append({
+                            'booking_id': row['BookingID'],
+                            'date': row['Date'],
+                            'movie': row['Movie_Name'],
+                            'movie_id': int(row['Movie_ID']),
+                            'screen': row['ScreenID'],
+                            'time': row['Show_Timing'],
+                            'seats': seats,
+                            'price': float(row['Total_Price']),
+                            'status': row['Ticket_Status']
+                        })
+                    except Exception as e:
+                        print(f"Error processing booking {row['BookingID']}: {str(e)}")
+                        continue
 
         if not user_bookings:
             print("\nYou have no active bookings to cancel.")
             return
 
-        user_bookings.sort(key=lambda x: x.get('booking_date', ''), reverse=True)
-
+        # Display bookings
         print("\nYour Active Bookings:")
-        print("=" * 90)
-        print(f"{'#':<3} | {'Movie':<25} | {'Screen':<8} | {'Date':<12} | {'Time':<8} | {'Seat':<6} | {'Price':<10}")
-        print("-" * 90)
+        print("=" * 130)
+        print(f"{'#':<3} | {'Booking ID':<12} | {'Movie':<25} | {'Screen':<8} | {'Date':<12} | {'Time':<8} | "
+            f"{'Seats':<20} | {'Price':<10}")
+        print("-" * 130)
         
         for i, booking in enumerate(user_bookings, 1):
-            print(f"{i:<3} | {booking['movie'][:24]:<25} | {booking['screen_id']:<8} | "
-                f"{booking['booking_date']:<12} | {booking['show_time']:<8} | "
-                f"{booking['seat']:<6} | ₹{booking['price_paid']:<9.2f}")
+            seats_str = ', '.join(booking['seats'][:3])
+            if len(booking['seats']) > 3:
+                seats_str += f" (+{len(booking['seats'])-3} more)"
+                
+            print(f"{i:<3} | {booking['booking_id'][:12]:<12} | {booking['movie'][:24]:<25} | "
+                f"{booking['screen']:<8} | {booking['date']:<12} | {booking['time']:<8} | "
+                f"{seats_str:<20} | ₹{booking['price']:<9.2f}")
 
         try:
             choice = input("\nEnter booking number to cancel (0 to return): ").strip()
@@ -600,62 +627,90 @@ class Theatre:
             print("Invalid input. Please enter a number.")
 
     def _process_cancellation(self, booking):
-        """Handle the actual cancellation process"""
-        screen_id = booking['screen_id']
-        show_time = booking['show_time']
-        seat = booking['seat']
-        movie_name = booking['movie']
-        details = booking['details']
-        refund_amount = booking['price_paid']
-
-        confirm = input(f"\nConfirm cancellation of seat {seat} for {movie_name} at {show_time}? (y/n): ").lower()
+        confirm = input(f"\nConfirm cancellation of booking {booking['booking_id']} for {booking['movie']}? (y/n): ").lower()
         if confirm != 'y':
             print("Cancellation aborted.")
             return
 
-        timing_data = self.hall_data[screen_id]['seating'][show_time]
+        # Update seat availability
+        screen_id = booking['screen']
+        show_time = booking['time']
         
+        if screen_id in self.hall_data and show_time in self.hall_data[screen_id]['seating']:
+            timing_data = self.hall_data[screen_id]['seating'][show_time]
+            for seat in booking['seats']:
+                try:
+                    row_char = seat[0].upper()
+                    col_str = seat[1:]
+                    col_index = timing_data['available_cols'].index(col_str)
+                    if timing_data['alpha_dict'][row_char][col_index] == 'X':
+                        timing_data['alpha_dict'][row_char][col_index] = 0
+                        timing_data['ticket_count'] += 1
+                        timing_data['booked_seats'].pop(seat, None)
+                except (ValueError, KeyError):
+                    print(f"Warning: Could not free seat {seat}")
+
+        # Process refund
+        refund_amount = booking['price']
+        new_balance = self.login.add_to_wallet(
+            self.login.current_user,
+            refund_amount,
+            description=f"Refund for {booking['movie']}"
+        )
+
+        # Update booking records
         try:
-            row_char = seat[0].upper()
-            col_str = seat[1:]
-            col_index = timing_data['available_cols'].index(col_str)
-            
-            timing_data['alpha_dict'][row_char][col_index] = 0
-            timing_data['ticket_count'] += 1
-            timing_data['booked_seats'].pop(seat, None)
+            # Update user's booking file
+            user_file = f'csvs/bookings/{self.login.current_user}_bookings.csv'
+            if os.path.exists(user_file):
+                temp_file = f'{user_file}.tmp'
+                with open(user_file, 'r') as infile, open(temp_file, 'w', newline='') as outfile:
+                    reader = csv.DictReader(infile)
+                    writer = csv.DictWriter(outfile, fieldnames=self.booking_fields)
+                    writer.writeheader()
+                    for row in reader:
+                        if row['BookingID'] == booking['booking_id']:
+                            row.update({
+                                'Ticket_Status': 'cancelled',
+                                'Cancellation_Date': datetime.today().strftime('%Y-%m-%d')
+                            })
+                        writer.writerow(row)
+                os.replace(temp_file, user_file)
 
-            new_balance = self.login.add_to_wallet(
-                self.login.current_user,
-                refund_amount,
-                description="Cancelled"
-            )
-            
-            self.update_booking_csv(
-                name=details.get('user_name', self.login.current_user),
-                uid=self.login.current_user,
-                show_time=show_time,
-                seats=[seat],
-                movie_id=booking['movie_id'],
-                status='cancelled',
-                total_price=-refund_amount
-            )
-
-            self.save_hall_data()
+            # Update main bookings file
+            main_file = self.login.file2
+            if os.path.exists(main_file):
+                temp_file = f'{main_file}.tmp'
+                with open(main_file, 'r') as infile, open(temp_file, 'w', newline='') as outfile:
+                    reader = csv.DictReader(infile)
+                    writer = csv.DictWriter(outfile, fieldnames=self.booking_fields)
+                    writer.writeheader()
+                    for row in reader:
+                        if row['BookingID'] == booking['booking_id']:
+                            row.update({
+                                'Ticket_Status': 'cancelled',
+                                'Cancellation_Date': datetime.today().strftime('%Y-%m-%d')
+                            })
+                        writer.writerow(row)
+                os.replace(temp_file, main_file)
 
             print("\n" + "="*60)
             print("CANCELLATION COMPLETED".center(60))
             print("="*60)
-            print(f"{'Movie:':<15} {movie_name}")
-            print(f"{'Screen:':<15} {screen_id}")
-            print(f"{'Show Time:':<15} {show_time}")
-            print(f"{'Seat:':<15} {seat}")
-            print(f"{'Refund Amount:':<15} ₹{refund_amount:.2f}")
+            print(f"{'Movie:':<15} {booking['movie']}")
+            print(f"{'Screen:':<15} {booking['screen']}")
+            print(f"{'Time:':<15} {booking['time']}")
+            print(f"{'Seats:':<15} {', '.join(booking['seats'])}")
+            print(f"{'Refund:':<15} ₹{refund_amount:.2f}")
             print(f"{'New Balance:':<15} ₹{new_balance:.2f}")
             print("="*60)
 
+            self.save_hall_data()
+
         except Exception as e:
-            print(f"\nError during cancellation: {str(e)}")
-            print("Please contact support for assistance.")
+            # print(f"\nError during cancellation update: {str(e)}")
+            if 'temp_file' in locals() and os.path.exists(temp_file):
+                os.remove(temp_file)
 
 
     def check_remaining_seats(self):
@@ -788,77 +843,47 @@ class Theatre:
             
 
     def view_history(self):
-        """Display booking history with enhanced formatting based on the actual CSV structure"""
+        """Display comprehensive booking history from user's personal file"""
         try:
-            if not os.path.exists(self.login.file2):
-                print("\n" + "="*60)
-                print("No booking history available yet.".center(60))
-                print("="*60)
+            user_file = f'csvs/bookings/{self.login.current_user}_bookings.csv'
+            
+            if not os.path.exists(user_file):
+                print("\nNo booking history found.")
                 return
+                
+            print("\n" + "="*120)
+            print(f"BOOKING HISTORY FOR: {self.login.current_user}".center(120))
+            print("="*120)
             
-            print("\n" + "="*100)
-            print(f"BOOKING HISTORY FOR: {self.login.current_user}".center(100))
-            print("="*100)
-            
-            with open(self.login.file2, 'r') as f:
+            with open(user_file, 'r') as f:
                 reader = csv.DictReader(f)
                 if not reader.fieldnames:
                     print("\nNo valid booking records found.")
                     return
                     
-                fields = {
-                    'date': 'DATE',
-                    'name': 'NAME',
-                    'uid': 'UID',
-                    'screen': 'SCREEN_ID',
-                    'time': 'MOVIE_TIME',
-                    'seats': 'SEAT_NUMBER(s)',
-                    'movie': 'MOVIE_NAME',
-                    'price': 'TIKCET_PRICE',
-                    'status': 'TICKET_STATUS'
-                }
-                
-                found = False
-                
-                print(f"\n{'Date':<12} | {'Movie':<20} | {'Screen':<8} | {'Time':<8} | "
-                    f"{'Seats':<15} | {'Price':<10} | {'Status':<10}")
-                print("-"*100)
+                print(f"\n{'Booking ID':<12} | {'Date':<12} | {'Movie':<25} | {'Screen':<8} | {'Time':<8} | "
+                    f"{'Seats':<20} | {'Price':<10} | {'Status':<12} | {'Cancelled On':<12}")
+                print("-"*120)
                 
                 for row in reader:
-                    if row.get(fields['uid']) != self.login.current_user:
+                    try:
+                        # Process seat numbers
+                        seats = ast.literal_eval(row['Seat_Numbers']) if row['Seat_Numbers'].startswith('[') else [row['Seat_Numbers']]
+                        seats_display = ', '.join(seats) if isinstance(seats, list) else row['Seat_Numbers']
+                        
+                        # Format output
+                        print(f"{row['BookingID'][:12]:<12} | {row['Date']:<12} | {row['Movie_Name'][:24]:<25} | "
+                            f"{row['ScreenID']:<8} | {row['Show_Timing']:<8} | {seats_display[:19]:<20} | "
+                            f"₹{float(row['Total_Price']):<9.2f} | {row['Ticket_Status'].capitalize():<12} | "
+                            f"{row.get('Cancellation_Date', '-'):<12}")
+                    except Exception as e:
+                        print(f"\nError processing record: {str(e)}")
                         continue
                         
-                    date = row.get(fields['date'], 'Unknown')
-                    movie = row.get(fields['movie'], 'Unknown')[:19]
-                    screen = row.get(fields['screen'], 'Unknown')
-                    time = row.get(fields['time'], 'Unknown')
-                    
-                    seats_str = row.get(fields['seats'], '[]')
-                    try:
-                        seats = ast.literal_eval(seats_str) if seats_str.startswith('[') else [seats_str]
-                        seats_display = ', '.join(seats) if isinstance(seats, list) else seats_str
-                    except:
-                        seats_display = seats_str
-                    
-                    price_str = row.get(fields['price'], '0')
-                    try:
-                        price = float(price_str) if price_str.replace('.','',1).isdigit() else 0
-                    except:
-                        price = 0
-                    
-                    status = row.get(fields['status'], 'Unknown').capitalize()
-                    
-                    print(f"{date:<12} | {movie:<20} | {screen:<8} | {time:<8} | "
-                        f"{seats_display:<15} | ₹{price:<8.2f} | {status:<10}")
-                    found = True
-                    
-                if not found:
-                    print("\nNo booking history found for this user.")
-                    
+            print("="*120)
             
         except Exception as e:
             print(f"\nError viewing history: {str(e)}")
-            print("Please contact support if this error persists.")
 
     def _process_booking_row(self, row):
         seats = row.get('Seat_Numbers', 'N/A')

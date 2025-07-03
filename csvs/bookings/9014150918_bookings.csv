@@ -1,0 +1,4 @@
+BookingID,Date,Time,UserName,UID,ScreenID,Show_Timing,Seat_Numbers,Movie_Name,Movie_ID,Total_Price,Ticket_Status,Cancellation_Date
+17098d6f-d643-4b0e-b2ec-695b995f1a8e,2025-07-03,18:03:06,karthik,9014150918,SC1,09:30,"['A0', 'A9']",Opera,7,600.0,cancelled,2025-07-03
+0ecb60fe-8b1c-4050-8d6c-e44dfd4f1399,2025-07-03,18:20:22,karthik,9014150918,SC4,7:00,['A4'],Superman,6,700.0,booked,
+ea6e4f2a-17d0-4f53-8c52-7019de231008,2025-07-03,18:29:04,emra,9014150918,SC2,21:30,['E3'],Number 1,8,300.0,cancelled,2025-07-03
