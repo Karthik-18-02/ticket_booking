@@ -6,3 +6,6 @@ MovieID,Title,ScreenID,Price,IsActive
 6,Superman,SC4,700.0,Yes
 7,Opera,SC1,300.0,Yes
 8,Number 1,SC2,300.0,Yes
+9,atom,ew,300.0,No
+11,iloveyou,sc6,50.0,No
+10,raj,SC9,40.0,No

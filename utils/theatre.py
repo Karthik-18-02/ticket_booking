@@ -321,7 +321,6 @@ class Theatre:
                 'Cancellation_Date': '' if status.lower() != 'cancelled' else datetime.today().strftime('%Y-%m-%d')
             }
 
-            # Save to user's booking file
             user_file = f'csvs/bookings/{uid}_bookings.csv'
             os.makedirs('csvs/bookings', exist_ok=True)
             file_exists = os.path.exists(user_file)
@@ -331,7 +330,6 @@ class Theatre:
                     writer.writeheader()
                 writer.writerow(booking_record)
 
-            # Save to main bookings file
             main_file = self.login.file2
             file_exists = os.path.exists(main_file)
             with open(main_file, 'a', newline='') as f:
@@ -568,7 +566,6 @@ class Theatre:
             print("\nYou have no active bookings to cancel.")
             return
         
-        # Load active bookings
         with open(user_file, 'r') as f:
             reader = csv.DictReader(f)
             for row in reader:
@@ -584,17 +581,19 @@ class Theatre:
                             'time': row['Show_Timing'],
                             'seats': seats,
                             'price': float(row['Total_Price']),
-                            'status': row['Ticket_Status']
+                            'status': row['Ticket_Status'],
+                            'booking_date': row.get('Date')
                         })
                     except Exception as e:
-                        print(f"Error processing booking {row['BookingID']}: {str(e)}")
+                        print(f"Error processing booking {row.get('BookingID', 'unknown')}: {str(e)}")
                         continue
 
         if not user_bookings:
             print("\nYou have no active bookings to cancel.")
             return
+        
+        user_bookings.sort(key=lambda x: x.get('booking_date', ''), reverse=True)
 
-        # Display bookings
         print("\nYour Active Bookings:")
         print("=" * 130)
         print(f"{'#':<3} | {'Booking ID':<12} | {'Movie':<25} | {'Screen':<8} | {'Date':<12} | {'Time':<8} | "
@@ -632,7 +631,6 @@ class Theatre:
             print("Cancellation aborted.")
             return
 
-        # Update seat availability
         screen_id = booking['screen']
         show_time = booking['time']
         
@@ -650,7 +648,6 @@ class Theatre:
                 except (ValueError, KeyError):
                     print(f"Warning: Could not free seat {seat}")
 
-        # Process refund
         refund_amount = booking['price']
         new_balance = self.login.add_to_wallet(
             self.login.current_user,
@@ -658,9 +655,7 @@ class Theatre:
             description=f"Refund for {booking['movie']}"
         )
 
-        # Update booking records
         try:
-            # Update user's booking file
             user_file = f'csvs/bookings/{self.login.current_user}_bookings.csv'
             if os.path.exists(user_file):
                 temp_file = f'{user_file}.tmp'
@@ -677,7 +672,6 @@ class Theatre:
                         writer.writerow(row)
                 os.replace(temp_file, user_file)
 
-            # Update main bookings file
             main_file = self.login.file2
             if os.path.exists(main_file):
                 temp_file = f'{main_file}.tmp'
@@ -722,7 +716,6 @@ class Theatre:
                 print("\nNo booked tickets found.")
                 return
                 
-            # Load active bookings
             bookings = []
             with open(user_file, 'r') as f:
                 reader = csv.DictReader(f)
@@ -748,10 +741,8 @@ class Theatre:
                 print("\nNo active bookings found.")
                 return
 
-            # Sort by booking date (newest first)
             bookings.sort(key=lambda x: (x['date'], x['time']), reverse=True)
 
-            # Display summary list
             print("\n" + "="*120)
             print(f"YOUR BOOKED TICKETS".center(120))
             print("="*120)
@@ -768,7 +759,6 @@ class Theatre:
                     f"{booking['screen']:<8} | {booking['date']:<12} | {booking['show_time']:<8} | "
                     f"{seats_str:<20} | ₹{booking['price']:<9.2f}")
 
-            # Option to view details
             while True:
                 try:
                     choice = input("\nEnter ticket number to view details (0 to return): ").strip()
@@ -792,7 +782,6 @@ class Theatre:
 
 
     def _display_ticket_details(self, booking):
-        """Display detailed information for a specific booking"""
         movie_data = self.movie_list.get(int(booking['movie_id']), {})
         
         print("\n" + "="*60)
@@ -816,7 +805,6 @@ class Theatre:
                 timing_data = self.hall_data[screen_id]['seating'][show_time]
                 print("   ", " ".join(f"{col:>2}" for col in timing_data['available_cols']))
                 
-                # Get user's booked seats for this show
                 user_seats = set(booking['seats'])
                 
                 for row_label in timing_data['available_rows']:
@@ -894,7 +882,6 @@ class Theatre:
             return []
 
     def _print_seats_info(self, seats_info):
-        """Helper method to print seats information in a formatted table"""
         print("\n" + "="*75)
         print("AVAILABLE SEATS".center(75))
         print("="*75)
@@ -966,7 +953,6 @@ class Theatre:
             
 
     def view_history(self):
-        """Display comprehensive booking history from user's personal file"""
         try:
             user_file = f'csvs/bookings/{self.login.current_user}_bookings.csv'
             
@@ -990,11 +976,9 @@ class Theatre:
                 
                 for row in reader:
                     try:
-                        # Process seat numbers
                         seats = ast.literal_eval(row['Seat_Numbers']) if row['Seat_Numbers'].startswith('[') else [row['Seat_Numbers']]
                         seats_display = ', '.join(seats) if isinstance(seats, list) else row['Seat_Numbers']
                         
-                        # Format output
                         print(f"{row['BookingID'][:12]:<12} | {row['Date']:<12} | {row['Movie_Name'][:24]:<25} | "
                             f"{row['ScreenID']:<8} | {row['Show_Timing']:<8} | {seats_display[:19]:<20} | "
                             f"₹{float(row['Total_Price']):<9.2f} | {row['Ticket_Status'].capitalize():<12} | "

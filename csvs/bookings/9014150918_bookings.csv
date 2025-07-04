@@ -3,3 +3,8 @@ BookingID,Date,Time,UserName,UID,ScreenID,Show_Timing,Seat_Numbers,Movie_Name,Mo
 0ecb60fe-8b1c-4050-8d6c-e44dfd4f1399,2025-07-03,18:20:22,karthik,9014150918,SC4,7:00,['A4'],Superman,6,700.0,booked,
 ea6e4f2a-17d0-4f53-8c52-7019de231008,2025-07-03,18:29:04,emra,9014150918,SC2,21:30,['E3'],Number 1,8,300.0,cancelled,2025-07-03
 137adc22-f233-440f-9b3b-3bb2fe72f49e,2025-07-03,18:51:37,fuing,9014150918,SC2,21:30,"['B1', 'E5', 'A4']",Number 1,8,900.0,booked,
+2762e0c6-d26c-43ef-b17c-91eb7426d74b,2025-07-04,15:31:23,okkkk,9014150918,SC5,12:00,['A0'],pournami,10,-100.0,cancelled,2025-07-04
+93bec7c1-13ea-43ab-b03a-f9c1b0a5a7ae,2025-07-04,15:54:47,karthik,9014150918,SC6,14:30,"['A0', 'B1', 'C2']",ramji,11,90.0,cancelled,2025-07-04
+35e504a6-5ba4-41d0-a1dd-a6ee861ca8f7,2025-07-04,16:12:53,karthik,9014150918,SC7,10:20,['A0'],rrr,11,45.0,cancelled,2025-07-04
+0642fc7a-7497-42e1-b011-4133bf8e5645,2025-07-04,16:25:46,karthik,9014150918,SC6,9:30,"['A0', 'B1', 'C2']",ganga,10,180.0,cancelled,2025-07-04
+0bbfe0df-d50a-4982-9b20-2172169ea480,2025-07-04,16:48:28,karthik,9014150918,SC9,9:30,"['A0', 'B1']",raj,10,80.0,booked,

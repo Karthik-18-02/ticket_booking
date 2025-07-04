@@ -76,9 +76,34 @@ class Admin:
     def add_screen(self):
         print("\n--- Add New Screen ---")
         
-        screen_id = input("Enter screen ID: ").strip()
-        rows = int(input("Number of rows: "))
-        cols = int(input("Number of columns per row: "))
+        screen_id = None
+        while not screen_id:
+            screen_id = input("Enter screen ID: ").strip()
+            if not screen_id:
+                print("Screen ID cannot be empty")
+
+        while True:
+            try:
+                rows = int(input("Number of rows: "))
+                if rows <= 3 or rows >= 26:
+                    print("Rows should be greater than 2 and less than 27")
+                else:
+                    break
+            
+            except ValueError:
+                print("Please enter a number only between 2 and 27")
+
+        while True:
+            try:
+                cols = int(input("Number of columns per row: "))
+                if cols is not int:
+                    print("Please enter a number between 2 and 27")
+                if cols <= 3 or cols >= 26:
+                    print("Columns per row should be greater than 2 and less than 27")
+                else:
+                    break
+            except ValueError:
+                print("Please enter a number only between 2 adn 27")
         
         show_timings = []
         print("\nEnter show timings in 24-hour format (HH:MM). Press Enter when finished.")
@@ -124,9 +149,90 @@ class Admin:
             ])
         
         self._init_screen_seating(screen_id, rows, cols, show_timings)
+        self.theatre.save_hall_data() 
         
         print(f"\nScreen {screen_id} added successfully with {rows}x{cols} seating")
         print(f"Show timings: {', '.join(show_timings)}")
+
+
+    def remove_screen(self):
+        print("\n--- Remove Screen ---")
+        self.view_screens()
+        
+        available_screens = []
+        if os.path.exists(self.screens_file):
+            with open(self.screens_file, 'r') as f:
+                reader = csv.DictReader(f)
+                available_screens = [row['ScreenID'] for row in reader if row]
+        
+        if not available_screens:
+            print("No screens available to remove.")
+            return
+        
+        while True:
+            screen_id = input("Enter screen ID to remove (or 'q' to cancel): ").strip().upper()
+            
+            if screen_id.lower() == 'q':
+                print("Operation cancelled.")
+                return
+            
+            if screen_id not in available_screens:
+                print(f"Invalid screen ID. Please choose from: {', '.join(available_screens)}")
+                continue
+            
+            break
+        
+        confirm = input(f"WARNING: This will permanently remove screen {screen_id} and all its data. Continue? (y/n): ").lower()
+        if confirm != 'y':
+            print("Screen removal cancelled.")
+            return
+        
+        try:
+            refunded_bookings = []
+            
+            screens = []
+            with open(self.screens_file, 'r') as f:
+                reader = csv.DictReader(f)
+                fieldnames = reader.fieldnames
+                for row in reader:
+                    if row['ScreenID'] == screen_id:
+                        row['Status'] = 'Inactive'
+                        row['LastMaintenance'] = datetime.now().strftime('%Y-%m-%d')
+                    screens.append(row)
+            
+            with open(self.screens_file, 'w', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(screens)
+            
+            movies = []
+            if os.path.exists(self.movies_file):
+                with open(self.movies_file, 'r') as f:
+                    reader = csv.DictReader(f)
+                    fieldnames = reader.fieldnames
+                    for row in reader:
+                        if row['ScreenID'] == screen_id:
+                            row['IsActive'] = 'No'
+                        movies.append(row)
+                
+                with open(self.movies_file, 'w', newline='') as f:
+                    writer = csv.DictWriter(f, fieldnames=fieldnames)
+                    writer.writeheader()
+                    writer.writerows(movies)
+            
+            if screen_id in self.theatre.hall_data:
+                del self.theatre.hall_data[screen_id]
+                self.theatre.save_hall_data()
+            
+            self.theatre.movie_list = {k:v for k,v in self.theatre.movie_list.items() if v['screen_id'] != screen_id}
+            
+            if screen_id in self.theatre.screens:
+                del self.theatre.screens[screen_id]
+            
+            print(f"\nScreen {screen_id} and all the data realted to it have been removed successfully.")
+        
+        except Exception as e:
+            print(f"\nError removing screen: {str(e)}")
 
 
     def _init_screen_seating(self, screen_id, rows, cols, timings):
@@ -155,16 +261,23 @@ class Admin:
                 'available_cols': available_cols
             }
 
-    def view_screens(self):
+    def view_screens(self, show_all=False):
         print("\n--- Theatre Screens ---")
-        screens = []
+        if show_all:
+            print("[Showing ALL screens including inactive]\n")
+        else:
+            print("[Showing only ACTIVE screens]\n")
         
+        screens = []
         try:
             if os.path.exists(self.screens_file):
                 with open(self.screens_file, 'r') as f:
                     reader = csv.DictReader(f)
                     if reader.fieldnames:
-                        screens = [row for row in reader if row]
+                        screens = [
+                            row for row in reader 
+                            if row and (show_all or row.get('Status', '').lower() == 'active')
+                        ]
             
             active_movies = {}
             if os.path.exists(self.movies_file):
@@ -173,16 +286,27 @@ class Admin:
                     for row in reader:
                         if row.get('IsActive', '').lower() == 'yes':
                             active_movies[row['ScreenID']] = row['Title']
+        
         except Exception as e:
             print(f"Error reading data: {str(e)}")
             return
         
         if not screens:
-            print("No screens available")
+            print("No screens available" if show_all else "No active screens available")
             return
-            
-        print(f"\n{'Screen':<8} | {'Rows':<5} | {'Cols':<5} | {'Status':<12} | {'Movie':<20} | {'Last Maintenance'}")
-        print("-"*80)
+        
+        headers = [
+            'Screen', 'Rows', 'Cols', 'Status', 
+            'Movie', 'Last Maintenance', 'Show Times'
+        ]
+        col_widths = [8, 5, 5, 12, 20, 15, 60]
+        
+        header_row = " | ".join(
+            f"{header:<{width}}" 
+            for header, width in zip(headers, col_widths)
+        )
+        print(header_row)
+        print("-" * (sum(col_widths) + len(headers)*3 - 1))
         
         for screen in screens:
             screen_id = screen.get('ScreenID', 'N/A')
@@ -199,7 +323,17 @@ class Admin:
                 except ValueError:
                     pass
             
-            print(f"{screen_id:<8} | {rows:<5} | {cols:<5} | {status:<12} | {movie[:19]:<20} | {maintenance_date}")
+            timings = screen.get('Timings', '')
+            if not timings and 'ShowTimes' in screen:
+                timings = screen['ShowTimes']
+            if timings:
+                timings = ', '.join(timings.split(';'))
+            
+            print(
+                f"{screen_id:<8} | {rows:<5} | {cols:<5} | "
+                f"{status:<12} | {movie[:19]:<20} | "
+                f"{maintenance_date:<15} | {timings[:50]:<50}"
+            )
 
     
     def display_seats(self):
@@ -572,34 +706,37 @@ class Admin:
         while True:
             print("\n=== ADMIN MENU ===")
             print("1. Add New Screen")
-            print("2. View All Screens")
-            print("3. Display Seats")
-            print("4. Add New Movie")
-            print("5. Remove Movie")
-            print("6. List All Movies")
-            print("7. Screen Maintenance")
-            print("8. Reset Seats")
-            print("9. Exit Admin Panel")
+            print("2. Remove Existing Screen")
+            print("3. View All Screens")
+            print("4. Display Seats")
+            print("5. Add New Movie")
+            print("6. Remove Movie")
+            print("7. List All Movies")
+            print("8. Screen Maintenance")
+            print("9. Reset Seats")
+            print("10. Exit Admin Panel")
             
-            choice = input("Enter your choice (1-9): ")
+            choice = input("Enter your choice (1-10): ")
             
             if choice == '1':
                 self.add_screen()
             elif choice == '2':
-                self.view_screens()
+                self.remove_screen()
             elif choice == '3':
-                self.display_seats()
+                self.view_screens()
             elif choice == '4':
-                self.add_movie()
+                self.display_seats()
             elif choice == '5':
-                self.remove_movie()
+                self.add_movie()
             elif choice == '6':
-                self.list_movies()
+                self.remove_movie()
             elif choice == '7':
-                self.screen_maintenance()
+                self.list_movies()
             elif choice == '8':
-                self.reset_seats()
+                self.screen_maintenance()
             elif choice == '9':
+                self.reset_seats()
+            elif choice == '10':
                 print("Exiting admin panel...")
                 break
             else:

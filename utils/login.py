@@ -225,7 +225,7 @@ class Login:
                 reader = csv.reader(f)
                 next(reader)
                 for row in reader:
-                    if len(row) >= 2:
+                    if len(row) == 2:
                         self.user_wallets[row[0]] = 1000
 
     def load_login_data(self):
