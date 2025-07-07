@@ -542,6 +542,7 @@ class Admin:
         
         screens = []
         status_changed = False
+        new_status = None
         
         with open(self.screens_file, 'r') as f:
             reader = csv.DictReader(f)
@@ -559,12 +560,44 @@ class Admin:
                 screens.append(screen)
         
         if status_changed:
+            # Update screens.csv
             with open(self.screens_file, 'w', newline='') as f:
                 writer = csv.DictWriter(f, fieldnames=fieldnames)
                 writer.writeheader()
                 writer.writerows(screens)
             
-            print(f"Screen {screen_id} status changed to {new_status}.")
+            # Update movies.csv if putting screen into maintenance
+            if new_status == 'Maintenance':
+                movies = []
+                movies_updated = False
+                if os.path.exists(self.movies_file):
+                    with open(self.movies_file, 'r') as f:
+                        reader = csv.DictReader(f)
+                        fieldnames = reader.fieldnames
+                        for row in reader:
+                            if row['ScreenID'] == screen_id and row['IsActive'].lower() == 'yes':
+                                row['IsActive'] = 'No'
+                                print(f"Deactivating movie: {row['Title']} (MovieID: {row['MovieID']})")
+                                movies_updated = True
+                            movies.append(row)
+                    
+                    if movies_updated:
+                        with open(self.movies_file, 'w', newline='') as f:
+                            writer = csv.DictWriter(f, fieldnames=fieldnames)
+                            writer.writeheader()
+                            writer.writerows(movies)
+                        
+                        # Update theatre.movie_list in memory
+                        movies_to_remove = [
+                            movie_id for movie_id, movie_data in self.theatre.movie_list.items() 
+                            if movie_data['screen_id'] == screen_id
+                        ]
+                        for movie_id in movies_to_remove:
+                            del self.theatre.movie_list[movie_id]
+            
+            print(f"\nScreen {screen_id} status changed to {new_status}.")
+            if new_status == 'Maintenance':
+                print("All movies on this screen have been deactivated.")
         else:
             print(f"Screen {screen_id} not found or status unchanged.")
 

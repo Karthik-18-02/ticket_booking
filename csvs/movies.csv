@@ -3,9 +3,10 @@ MovieID,Title,ScreenID,Price,IsActive
 2,Pushpa,SC2,500.0,No
 3,War,SC1,200.0,No
 4,Shade,SC1,350.0,No
-6,Superman,SC4,700.0,Yes
-7,Opera,SC1,300.0,Yes
+6,Superman,SC4,700.0,No
+7,Opera,SC1,300.0,No
 8,Number 1,SC2,300.0,Yes
 9,atom,ew,300.0,No
 11,iloveyou,sc6,50.0,No
 10,raj,SC9,40.0,No
+11,RRR,SC1,100.0,Yes
