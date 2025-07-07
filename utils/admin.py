@@ -371,11 +371,73 @@ class Admin:
     def add_movie(self):
         print("\n--- Add New Movie ---")
         
-        title = input("Movie title: ")
-        price = float(input("Ticket price: "))
+        while True:
+            title = input("Movie title: ").strip()
+            if not title:
+                print("Error: Movie title cannot be empty.")
+                continue
+            
+            if len(title) > 100:
+                print("Error: Title too long (max 100 characters).")
+                continue
+                
+            if os.path.exists(self.movies_file):
+                with open(self.movies_file, 'r') as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        if row['Title'].lower() == title.lower() and row['IsActive'].lower() == 'yes':
+                            print(f"Error: Active movie '{row['Title']}' already exists (ID: {row['MovieID']}).")
+                            print("Please deactivate the existing movie first or choose a different title.")
+                            return
+            break
         
-        self.view_screens()
-        screen_id = input("Assign to screen ID: ")
+        while True:
+            price_input = input("Ticket price: ").strip()
+            try:
+                price = float(price_input)
+                if price <= 0:
+                    print("Error: Price must be greater than 0.")
+                    continue
+                if price > 1000:
+                    print("Warning: Price seems unusually high. Confirm? (y/n): ")
+                    if input().lower() != 'y':
+                        continue
+                break
+            except ValueError:
+                print("Error: Please enter a valid number for the price.")
+        
+        active_screens = []
+        if os.path.exists(self.screens_file):
+            with open(self.screens_file, 'r') as f:
+                reader = csv.DictReader(f)
+                active_screens = [
+                    row['ScreenID'] for row in reader 
+                    if row and row.get('Status', '').lower() == 'active'
+                ]
+        
+        if not active_screens:
+            print("Error: No active screens available to assign movie.")
+            return
+        
+        while True:
+            self.view_screens()
+            screen_id = input("Assign to screen ID: ").strip().upper()
+            
+            if not screen_id:
+                print("Error: Screen ID cannot be empty.")
+                continue
+                
+            if screen_id not in active_screens:
+                print(f"Error: Invalid screen ID. Please choose from active screens: {', '.join(active_screens)}")
+                continue
+                
+            with open(self.screens_file, 'r') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if row['ScreenID'] == screen_id and row.get('Status', '').lower() == 'maintenance':
+                        print(f"Error: Screen {screen_id} is under maintenance and cannot be assigned movies.")
+                        return
+            break
         
         updated_movies = []
         if os.path.exists(self.movies_file):
@@ -385,7 +447,7 @@ class Admin:
                 for row in reader:
                     if row['ScreenID'] == screen_id and row['IsActive'].lower() == 'yes':
                         row['IsActive'] = 'No'
-                        print(f"Deactivated previous movie: {row['Title']}")
+                        print(f"Deactivated previous movie: {row['Title']} (ID: {row['MovieID']})")
                     updated_movies.append(row)
             
             with open(self.movies_file, 'w', newline='') as f:
@@ -393,25 +455,37 @@ class Admin:
                 writer.writeheader()
                 writer.writerows(updated_movies)
         
-        new_id = len(updated_movies) + 1 if updated_movies else 1
+        new_id = 1
+        if updated_movies:
+            existing_ids = [int(row['MovieID']) for row in updated_movies if row['MovieID'].isdigit()]
+            new_id = max(existing_ids) + 1 if existing_ids else 1
         
-        with open(self.movies_file, 'a', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow([
-                new_id,
-                title,
-                screen_id,
-                price,
-                'Yes'
-            ])
-        
-        self.theatre.movie_list[new_id] = {
-            'name': title,
-            'price': price,
-            'screen_id': screen_id
-        }
-        
-        print(f"\nMovie '{title}' added successfully to Screen {screen_id}!")
+        try:
+            with open(self.movies_file, 'a', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    new_id,
+                    title,
+                    screen_id,
+                    price,
+                    'Yes'
+                ])
+            
+            self.theatre.movie_list[new_id] = {
+                'name': title,
+                'price': price,
+                'screen_id': screen_id
+            }
+            
+            print(f"\nSuccessfully added movie:")
+            print(f"ID: {new_id}")
+            print(f"Title: {title}")
+            print(f"Screen: {screen_id}")
+            print(f"Price: ₹{price:.2f}")
+            
+        except Exception as e:
+            print(f"\nError saving movie: {str(e)}")
+            print("Please try again or check system permissions.")
 
 
     def remove_movie(self):

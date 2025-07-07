@@ -1,0 +1,2 @@
+BookingID,Date,Time,UserName,UID,ScreenID,Show_Timing,Seat_Numbers,Movie_Name,Movie_ID,Total_Price,Ticket_Status,Cancellation_Date
+081d2db4-b507-4213-8853-1f3a6cd9771f,2025-07-07,11:25:41,User1,9014150919,SC12,21:30,"['A0', 'B1', 'C2', 'D3', 'E4']",Stranger Things,15,225.0,booked,

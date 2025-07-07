@@ -5,8 +5,11 @@ MovieID,Title,ScreenID,Price,IsActive
 4,Shade,SC1,350.0,No
 6,Superman,SC4,700.0,No
 7,Opera,SC1,300.0,No
-8,Number 1,SC2,300.0,Yes
+8,Number 1,SC2,300.0,No
 9,atom,ew,300.0,No
-11,iloveyou,sc6,50.0,No
 10,raj,SC9,40.0,No
-11,RRR,SC1,100.0,Yes
+11,RRR,SC1,100.0,No
+12,Kubera,SC9,300.0,Yes
+13,OG,SC10,500.0,Yes
+14,Dilwale,SC11,350.0,Yes
+15,Stranger Things,SC12,45.0,Yes

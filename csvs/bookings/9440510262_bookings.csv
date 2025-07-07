@@ -1,2 +1,3 @@
 BookingID,Date,Time,UserName,UID,ScreenID,Show_Timing,Seat_Numbers,Movie_Name,Movie_ID,Total_Price,Ticket_Status,Cancellation_Date
 84bbca31-ba2e-45e6-880c-2f2336961084,2025-07-03,17:59:42,Venky,9440510262,SC2,10:30,"['A0', 'A1', 'A2', 'A3', 'A4']",Number 1,8,1500.0,booked,
+676abb3d-ed42-4ae4-a32c-7277cb613e36,2025-07-07,11:26:52,Venkat,9440510262,SC12,11:30,"['G0', 'F1', 'E2', 'D3']",Stranger Things,15,180.0,booked,
