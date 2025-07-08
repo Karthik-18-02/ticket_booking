@@ -10,6 +10,7 @@ MovieID,Title,ScreenID,Price,IsActive
 10,raj,SC9,40.0,No
 11,RRR,SC1,100.0,No
 12,Kubera,SC9,300.0,Yes
-13,OG,SC10,500.0,Yes
-14,Dilwale,SC11,350.0,Yes
+13,OG,SC10,500.0,No
+14,Dilwale,SC11,350.0,No
 15,Stranger Things,SC12,45.0,Yes
+16,Kalki,SC10,200.0,No

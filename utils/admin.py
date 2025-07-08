@@ -590,7 +590,7 @@ class Admin:
             print(f"Error listing movies: {str(e)}")
 
     def screen_maintenance(self):
-        self.view_screens()
+        self.view_screens(show_all=True)
         
         available_screens = []
         if os.path.exists(self.screens_file):
@@ -634,13 +634,11 @@ class Admin:
                 screens.append(screen)
         
         if status_changed:
-            # Update screens.csv
             with open(self.screens_file, 'w', newline='') as f:
                 writer = csv.DictWriter(f, fieldnames=fieldnames)
                 writer.writeheader()
                 writer.writerows(screens)
             
-            # Update movies.csv if putting screen into maintenance
             if new_status == 'Maintenance':
                 movies = []
                 movies_updated = False
@@ -661,7 +659,6 @@ class Admin:
                             writer.writeheader()
                             writer.writerows(movies)
                         
-                        # Update theatre.movie_list in memory
                         movies_to_remove = [
                             movie_id for movie_id, movie_data in self.theatre.movie_list.items() 
                             if movie_data['screen_id'] == screen_id
@@ -676,15 +673,60 @@ class Admin:
             print(f"Screen {screen_id} not found or status unchanged.")
 
 
-    def reset_seats(self):
-        print("\n=== SEAT RESET OPTIONS ===")
-        print("1. Reset seats for specific show timing")
-        print("2. Reset all timings for a screen")
-        print("3. Reset all screens (full reset)")
-        print("4. Cancel")
+    def _get_active_screens(self):
+        active_screens = []
+        if os.path.exists(self.screens_file):
+            with open(self.screens_file, 'r') as f:
+                reader = csv.DictReader(f)
+                active_screens = [
+                    row['ScreenID'] for row in reader 
+                    if row and row.get('Status', '').lower() == 'active'
+                ]
+        return active_screens
+
+    def _get_active_screens_with_movies(self):
+        """Returns dict of {screen_id: movie_name} for active screens with movies"""
+        screens = {}
+        active_screens = self._get_active_screens()
         
+        for movie_id, movie_data in self.theatre.movie_list.items():
+            screen_id = movie_data['screen_id']
+            if screen_id in active_screens:
+                screens[screen_id] = movie_data['name']
+        
+        if os.path.exists(self.movies_file):
+            with open(self.movies_file, 'r') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if (row['ScreenID'] in active_screens and 
+                        row['IsActive'].lower() == 'yes' and 
+                        row['ScreenID'] not in screens):
+                        screens[row['ScreenID']] = row['Title']
+        
+        return screens
+
+    def _get_screen_timings(self, screen_id):
+        """Get available timings for a screen from hall_data"""
+        if not hasattr(self.theatre, 'hall_data') or screen_id not in self.theatre.hall_data:
+            print(f"Error: Screen {screen_id} not found in theatre data")
+            return []
+        
+        if 'seating' not in self.theatre.hall_data[screen_id]:
+            print(f"Error: No seating data for screen {screen_id}")
+            return []
+        
+        return list(self.theatre.hall_data[screen_id]['seating'].keys())
+
+    def reset_seats(self):
+        """Main menu for seat reset operations"""
         while True:
-            choice = input("Enter your choice (1-4): ")
+            print("\n=== SEAT RESET OPTIONS ===")
+            print("1. Reset seats for specific show timing")
+            print("2. Reset all timings for a screen")
+            print("3. Reset all screens (full reset)")
+            print("4. Cancel")
+            
+            choice = input("\nEnter your choice (1-4): ").strip()
             
             if choice == '1':
                 self._reset_specific_timing()
@@ -699,103 +741,262 @@ class Admin:
                 print("Seat reset cancelled.")
                 break
             else:
-                print("Invalid choice. Please try again.")
+                print("Invalid choice. Please enter 1-4.")
 
     def _reset_specific_timing(self):
-        """Reset seats for a specific show timing"""
-        print("\nAvailable Screens and Movies:")
-        
-        screens = self._get_active_screens()
-        screen_movies = {}
-        
-        for movie_id, movie_data in self.theatre.movie_list.items():
-            screen_id = movie_data['screen_id']
-            if screen_id in screens:
-                screen_movies[screen_id] = movie_data['name']
-        
-        for i, screen_id in enumerate(screens, 1):
-            movie_name = screen_movies.get(screen_id, "No movie assigned")
-            print(f"{i}. Screen {screen_id} - {movie_name}")
-        
-        screen_idx = self._get_valid_input("\nSelect screen: ", 1, len(screens)) - 1
-        screen_id = screens[screen_idx]
-        
-        print("\nAvailable Show Timings:")
-        for i, timing in enumerate(self.theatre.movie_timings, 1):
-            print(f"{i}. {timing}")
-        
-        timing_idx = self._get_valid_input("Select timing: ", 1, len(self.theatre.movie_timings)) - 1
-        timing = self.theatre.movie_timings[timing_idx]
-        
-        confirm = input(f"\nConfirm reset seats for Screen {screen_id} at {timing}? (y/n): ").lower()
-        if confirm == 'y':
+        """Reset seats for one timing on one screen"""
+        try:
+            print("\nAvailable Screens and Movies:")
+            screens = self._get_active_screens_with_movies()
+            if not screens:
+                print("No active screens with movies available.")
+                return
+                
+            screen_id = self._select_screen(screens)
+            if not screen_id:
+                return
+                
+            timings = self._get_screen_timings(screen_id)
+            if not timings:
+                return
+                
+            timing = self._select_timing(timings)
+            if not timing:
+                return
+                
+            if not self._confirm_action(f"reset seats for Screen {screen_id} at {timing}"):
+                return
+                
             self._do_reset(screen_id, timing)
             self.theatre.save_hall_data()
-            print(f"Seats reset for Screen {screen_id} at {timing}")
-        else:
-            print("Reset cancelled.")
+            print(f"\n✓ Seats reset for Screen {screen_id} at {timing}")
+            
+        except Exception as e:
+            print(f"\nError resetting seats: {str(e)}")
 
     def _reset_all_timings_for_screen(self):
-        """Reset all timings for a selected screen"""
-        print("\nAvailable Screens and Movies:")
-        
-        screens = self._get_active_screens()
-        screen_movies = {}
-        
-        for movie_id, movie_data in self.theatre.movie_list.items():
-            screen_id = movie_data['screen_id']
-            if screen_id in screens:
-                screen_movies[screen_id] = movie_data['name']
-        
-        for i, screen_id in enumerate(screens, 1):
-            movie_name = screen_movies.get(screen_id, "No movie assigned")
-            print(f"{i}. Screen {screen_id} - {movie_name}")
-        
-        screen_idx = self._get_valid_input("\nSelect screen: ", 1, len(screens)) - 1
-        screen_id = screens[screen_idx]
-        
-        current_movie = screen_movies.get(screen_id, "no current movie")
-        
-        confirm = input(f"\nConfirm reset ALL timings for Screen {screen_id} ({current_movie})? (y/n): ").lower()
-        if confirm == 'y':
-            for timing in self.theatre.movie_timings:
+        """Reset all timings for one screen"""
+        try:
+            print("\nAvailable Screens and Movies:")
+            screens = self._get_active_screens_with_movies()
+            if not screens:
+                print("No active screens with movies available.")
+                return
+                
+            screen_id = self._select_screen(screens)
+            if not screen_id:
+                return
+                
+            movie_name = screens[screen_id]
+            
+            if not self._confirm_action(f"reset ALL timings for Screen {screen_id} ({movie_name})"):
+                return
+                
+            timings = self._get_screen_timings(screen_id)
+            if not timings:
+                return
+                
+            for timing in timings:
                 self._do_reset(screen_id, timing)
+                
             self.theatre.save_hall_data()
-            print(f"All timings reset for Screen {screen_id} ({current_movie})")
-        else:
-            print("Reset cancelled.")
+            print(f"\n✓ All timings reset for Screen {screen_id} ({movie_name})")
+            
+        except Exception as e:
+            print(f"\nError resetting screen timings: {str(e)}")
 
     def _reset_all_screens(self):
-        """Reset all screens and all timings"""
-        confirm = input("\nWARNING: This will reset ALL seats in ALL screens. Continue? (y/n): ").lower()
-        if confirm == 'y':
-            for screen_id in self._get_active_screens():
-                for timing in self.theatre.movie_timings:
-                    self._do_reset(screen_id, timing)
+        """Reset all timings on all screens"""
+        try:
+            if not self._confirm_action("reset ALL seats in ALL screens", warning=True):
+                return
+                
+            active_screens = self._get_active_screens()
+            if not active_screens:
+                print("No active screens found.")
+                return
+                
+            for screen_id in active_screens:
+                timings = self._get_screen_timings(screen_id)
+                if timings:
+                    for timing in timings:
+                        self._do_reset(screen_id, timing)
+                        
             self.theatre.save_hall_data()
-            print("All screens and timings have been reset.")
-        else:
-            print("Full reset cancelled.")
+            print("\n✓ All screens and timings have been reset")
+            
+        except Exception as e:
+            print(f"\nError during full reset: {str(e)}")
 
     def _do_reset(self, screen_id, timing):
         """Actual seat reset implementation"""
-        if screen_id in self.theatre.hall_data and timing in self.theatre.hall_data[screen_id]['seating']:
+        try:
+            if screen_id not in self.theatre.hall_data:
+                raise ValueError(f"Screen {screen_id} not found")
+                
+            if timing not in self.theatre.hall_data[screen_id]['seating']:
+                raise ValueError(f"Timing {timing} not found for screen {screen_id}")
+                
+            seating_data = self.theatre.hall_data[screen_id]['seating'][timing]
             rows = self.theatre.hall_data[screen_id]['dimensions']['rows']
             cols = self.theatre.hall_data[screen_id]['dimensions']['cols']
             
-            timing_data = self.theatre.hall_data[screen_id]['seating'][timing]
-            timing_data['alpha_dict'] = {chr(65 + i): [0]*cols for i in range(rows)}
-            timing_data['booked_seats'] = {}
-            timing_data['ticket_count'] = rows * cols
+            # Reset all seats to available (0)
+            seating_data['alpha_dict'] = {chr(65 + i): [0]*cols for i in range(rows)}
+            seating_data['booked_seats'] = {}
+            seating_data['ticket_count'] = rows * cols
+            
+        except Exception as e:
+            raise ValueError(f"Error resetting seats: {str(e)}")
+
+    def _select_screen(self, screens):
+        """Prompt user to select a screen from available screens"""
+        screen_items = list(screens.items())
+        
+        # Display available screens
+        print("\nAvailable Screens:")
+        for idx, (screen_id, movie_name) in enumerate(screen_items, 1):
+            print(f"{idx}. Screen {screen_id} - {movie_name or 'No movie assigned'}")
+        
+        while True:
+            try:
+                choice = input("\nSelect screen (1-{} or 0 to cancel): ".format(len(screen_items))).strip()
+                
+                if choice == '0':
+                    print("Operation cancelled.")
+                    return None
+                    
+                if not choice.isdigit():
+                    print("Please enter a number.")
+                    continue
+                    
+                choice_idx = int(choice) - 1
+                if 0 <= choice_idx < len(screen_items):
+                    return screen_items[choice_idx][0]  # Return screen_id
+                    
+                print("Please select a valid number from the list.")
+                
+            except (KeyboardInterrupt, EOFError):
+                print("\nOperation cancelled by user.")
+                return None
+            except Exception as e:
+                print(f"Error: {str(e)}")
+                continue
+
+    def _select_timing(self, timings):
+        """Prompt user to select a timing from available show times"""
+        print("\nAvailable Show Timings:")
+        for idx, timing in enumerate(timings, 1):
+            print(f"{idx}. {timing}")
+        
+        while True:
+            try:
+                choice = input("\nSelect timing (1-{} or 0 to cancel): ".format(len(timings))).strip()
+                
+                if choice == '0':
+                    print("Operation cancelled.")
+                    return None
+                    
+                if not choice.isdigit():
+                    print("Please enter a number.")
+                    continue
+                    
+                choice_idx = int(choice) - 1
+                if 0 <= choice_idx < len(timings):
+                    return timings[choice_idx]
+                    
+                print("Please select a valid number from the list.")
+                
+            except (KeyboardInterrupt, EOFError):
+                print("\nOperation cancelled by user.")
+                return None
+            except Exception as e:
+                print(f"Error: {str(e)}")
+                continue
+
+    def _confirm_action(self, action, warning=False):
+        """Get user confirmation for an action"""
+        prefix = "WARNING: " if warning else ""
+        while True:
+            try:
+                response = input(f"\n{prefix}Confirm {action}? (y/n): ").strip().lower()
+                if response == 'y':
+                    return True
+                if response == 'n':
+                    print("Action cancelled.")
+                    return False
+                print("Please enter 'y' or 'n'.")
+            except (KeyboardInterrupt, EOFError):
+                print("\nOperation cancelled.")
+                return False
 
     def _get_active_screens(self):
-        """Get list of active screens"""
-        screens = []
+        """Get list of active screen IDs from screens.csv"""
+        active_screens = []
         if os.path.exists(self.screens_file):
             with open(self.screens_file, 'r') as f:
                 reader = csv.DictReader(f)
-                screens = [row['ScreenID'] for row in reader if row.get('Status', '').lower() == 'active']
+                active_screens = [
+                    row['ScreenID'] for row in reader 
+                    if row and row.get('Status', '').lower() == 'active'
+                ]
+        return active_screens
+
+    def _get_active_screens_with_movies(self):
+        """Get active screens with their assigned movies"""
+        screens = {}
+        active_screens = self._get_active_screens()
+        
+        # Check in-memory movie list first
+        for movie_id, movie_data in self.theatre.movie_list.items():
+            screen_id = movie_data['screen_id']
+            if screen_id in active_screens:
+                screens[screen_id] = movie_data['name']
+        
+        # Check movies.csv for any additional movies
+        if os.path.exists(self.movies_file):
+            with open(self.movies_file, 'r') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if (row['ScreenID'] in active_screens and 
+                        row['IsActive'].lower() == 'yes' and 
+                        row['ScreenID'] not in screens):
+                        screens[row['ScreenID']] = row['Title']
+        
         return screens
+
+    def _get_screen_timings(self, screen_id):
+        """Get available timings for a specific screen"""
+        if (not hasattr(self.theatre, 'hall_data') or (screen_id not in self.theatre.hall_data)):
+            print(f"Error: No data found for screen {screen_id}")
+            return []
+        
+        if 'seating' not in self.theatre.hall_data[screen_id]:
+            print(f"Error: No seating data for screen {screen_id}")
+            return []
+        
+        return list(self.theatre.hall_data[screen_id]['seating'].keys())
+
+    def _do_reset(self, screen_id, timing):
+        """Perform the actual seat reset for a screen and timing"""
+        try:
+            if screen_id not in self.theatre.hall_data:
+                raise ValueError(f"Screen {screen_id} not found")
+                
+            if timing not in self.theatre.hall_data[screen_id]['seating']:
+                raise ValueError(f"Timing {timing} not found for screen {screen_id}")
+                
+            seating_data = self.theatre.hall_data[screen_id]['seating'][timing]
+            rows = self.theatre.hall_data[screen_id]['dimensions']['rows']
+            cols = self.theatre.hall_data[screen_id]['dimensions']['cols']
+            
+            # Reset all seats to available (0)
+            seating_data['alpha_dict'] = {chr(65 + i): [0]*cols for i in range(rows)}
+            seating_data['booked_seats'] = {}
+            seating_data['ticket_count'] = rows * cols
+            
+        except Exception as e:
+            raise ValueError(f"Error resetting seats: {str(e)}")
 
     def _get_valid_input(self, prompt, min_val, max_val):
         """Get validated numeric input"""
